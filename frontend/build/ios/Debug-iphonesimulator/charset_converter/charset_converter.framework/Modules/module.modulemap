@@ -1,0 +1,11 @@
+framework module charset_converter {
+  umbrella header "charset_converter-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module charset_converter.Swift {
+  header "charset_converter-Swift.h"
+  requires objc
+}
