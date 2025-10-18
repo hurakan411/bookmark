@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' hide context;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:app_links/app_links.dart';
 
 // Models
 import 'models/tag_model.dart';
@@ -25,6 +28,7 @@ import '_accordion_folder_selector.dart';
 import 'services/thumbnail_service.dart';
 import 'services/tag_suggestion_service.dart';
 import 'services/tag_analysis_service.dart';
+import 'services/share_extension_service.dart';
 import 'package:image_picker/image_picker.dart';
 
 // フォルダカードのアコーディオン展開/折りたたみアイコン付きタイル
@@ -177,6 +181,9 @@ Future<Database> getDatabase() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Share Extension サービスの初期化
+  ShareExtensionService.initialize();
+  
   // ローカルDBの初期化
   await getDatabase();
   
@@ -248,7 +255,7 @@ class BookmarkApp extends StatelessWidget {
   }
 }
 
-const String appVersion = 'v0.3.0-supabase';
+const String appVersion = 'v1.0';
 
 // ===== Store (ChangeNotifier) =====
 class AppStore extends ChangeNotifier {
@@ -530,16 +537,48 @@ class _RootScreenState extends State<RootScreen> {
   bool _allSelectionMode = false;
   int _allSelectedCount = 0;
   final GlobalKey<_AllBookmarksScreenState> _allKey = GlobalKey<_AllBookmarksScreenState>();
+  
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
 
   @override
   void initState() {
     super.initState();
     _initialize();
+    _initDeepLinks();
+  }
+  
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _initialize() async {
     await store.initialize();
     setState(() => _initialized = true);
+  }
+  
+  void _initDeepLinks() async {
+    _appLinks = AppLinks();
+    
+    // アプリが起動していない状態からのリンク処理
+    final initialUri = await _appLinks.getInitialLink();
+    if (initialUri != null) {
+      _handleDeepLink(initialUri);
+    }
+    
+    // アプリが既に起動している状態でのリンク処理
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    });
+  }
+  
+  void _handleDeepLink(Uri uri) {
+    // bookmark://open の場合はホーム画面を表示
+    if (uri.scheme == 'bookmark' && uri.host == 'open') {
+      setState(() => idx = 0);
+    }
   }
 
   void _goTab(int i) => setState(() => idx = i);
@@ -690,16 +729,18 @@ class AppDrawer extends StatelessWidget {
               _NavTile(context, icon: Icons.settings_outlined, label: '各種設定', page: const SettingsScreen()),
 
               // --- AI（見出し→ボタン）
-              _GroupTitle('AI'),
-              ListTile(
-                leading: const Icon(Icons.create_new_folder_outlined),
-                title: const Text('自動フォルダ作成'),
-                onTap: () { Navigator.pop(context); _runAutoFolder(context); },
-              ),
 
               // --- 問い合わせ（見出し→ボタン）
               _GroupTitle('問い合わせ'),
-              _NavTile(context, icon: Icons.bug_report_outlined, label: '不具合報告/改善依頼', page: const ReportScreen()),
+              ListTile(
+                leading: const Icon(Icons.bug_report_outlined),
+                title: const Text('不具合報告/改善依頼'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final url = Uri.parse('https://forms.gle/Z1mfnV3CXnC45aSS9');
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                },
+              ),
 
               // --- App課金（見出し→ボタン）
               _GroupTitle('App課金'),
@@ -709,18 +750,10 @@ class AppDrawer extends StatelessWidget {
               // --- その他（見出し→ボタン）
               _GroupTitle('その他'),
               _NavTile(context, icon: Icons.privacy_tip_outlined, label: 'プライバシーポリシー', page: const PrivacyScreen()),
-              ListTile(
-                leading: const Icon(Icons.verified_outlined),
-                title: const Text('バージョン'),
-                subtitle: const Text(appVersion),
-                onTap: () {
-                  showAboutDialog(
-                    context: context,
-                    applicationName: 'Bookmark Manager',
-                    applicationVersion: appVersion,
-                    children: const [Text('モックビルド。機能は一部ダミーです。')],
-                  );
-                },
+              const ListTile(
+                leading: Icon(Icons.verified_outlined),
+                title: Text('バージョン'),
+                subtitle: Text(appVersion),
               ),
             ],
           ),
@@ -765,6 +798,109 @@ class _HomeScreenState extends State<HomeScreen> {
   String folderSort = 'name_asc';
   List<BookmarkModel>? pinnedOrder;
   List<FolderModel>? folderOrder;
+
+  @override
+  void initState() {
+    super.initState();
+    // Share Extensionからの共有データをチェック
+    _checkSharedData();
+    
+    // 共有データのコールバックを設定
+    ShareExtensionService.setOnSharedDataCallback((data) {
+      _handleSharedData(data);
+    });
+  }
+
+  // Share Extensionからの共有データをチェック
+  void _checkSharedData() async {
+    final data = await ShareExtensionService.getSharedData();
+    if (data != null && mounted) {
+      _handleSharedData(data);
+    }
+  }
+
+  // 共有データを処理
+  void _handleSharedData(Map<String, String> data) async {
+    if (!mounted) return;
+    
+    final url = data['url'];
+    final title = data['title'];
+    
+    if (url != null) {
+      // 直接保存（シートは表示しない）
+      if (!mounted) return;
+      final store = StoreProvider.of(this.context);
+
+      // 既存タグへマッピング
+      final List<TagModel> selectedTags = [];
+      final tagsText = data['tags_text'] ?? '';
+      if (tagsText.isNotEmpty) {
+        final names = tagsText.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty);
+        for (final name in names) {
+          final tag = store.tags.firstWhere(
+            (t) => t.name == name,
+            orElse: () => TagModel(id: '', name: ''),
+          );
+          if (tag.id.isNotEmpty && !selectedTags.any((t) => t.id == tag.id)) {
+            selectedTags.add(tag);
+          }
+        }
+      }
+
+      // フォルダ名からID解決
+      String? folderId;
+      final folderName = data['folder_name'];
+      if (folderName != null && folderName.isNotEmpty) {
+        final folder = store.folders.firstWhere(
+          (f) => f.name == folderName,
+          orElse: () => FolderModel(id: '', name: '', sortOrder: 0),
+        );
+        if (folder.id.isNotEmpty) folderId = folder.id;
+      }
+
+      final bm = BookmarkModel(
+        id: _id(),
+        url: url,
+        title: (title?.isNotEmpty == true) ? title! : url,
+        excerpt: data['excerpt'] ?? '',
+        createdAt: DateTime.now(),
+        readAt: null,
+        isPinned: data['is_pinned'] == 'true',
+        isArchived: false,
+        tags: selectedTags,
+        folderId: folderId,
+        thumbnailUrl: data['thumbnail_path'],
+      );
+
+      try {
+        await store.addBookmark(bm);
+        if (mounted) {
+          ScaffoldMessenger.of(this.context).showSnackBar(
+            const SnackBar(content: Text('共有からブックマークを追加しました')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(this.context).showSnackBar(
+            SnackBar(content: Text('追加に失敗しました: $e')),
+          );
+        }
+      }
+      
+      // このブックマークの処理が完了したら、共有データをクリア
+      ShareExtensionService.clearSharedData();
+      
+      // 次のブックマークがあるかチェック（100ms後）
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (mounted) {
+        final nextData = await ShareExtensionService.getSharedData();
+        if (nextData != null) {
+          // 次のブックマークを処理
+          _handleSharedData(nextData);
+        }
+      }
+    }
+  }
 
   // Expose a safe way to refresh folder list from external helpers
   void refreshFolders(AppStore store) {
@@ -1279,7 +1415,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   bool _isBulkAssigning = false;
   bool _isAnalyzingFolders = false;
   bool _isBulkAssigningFolders = false;
-  int _maxFolderDepth = 3;  // デフォルトは3層
+  // 最大階層数の選択機能は廃止
 
   // 共通のローディング状態
   bool get _isAnyProcessing => _isAnalyzing || _isBulkAssigning || _isAnalyzingFolders || _isBulkAssigningFolders;
@@ -1642,7 +1778,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
         body: json.encode({
           'bookmarks': bookmarksData,
           'current_folders': currentFolders,
-          'max_depth': _maxFolderDepth,  // 最大階層数を送信
+          // 最大階層数は送信しない（AIが自動で最適な階層を決定）
         }),
       );
 
@@ -1822,37 +1958,6 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
                   '• 不要なフォルダの削除提案\n'
                   '※ 現在のフォルダとブックマークの紐付きは全て解除されます\n',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Text(
-                      '最大階層数：',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    DropdownButton<int>(
-                      value: _maxFolderDepth,
-                      items: List.generate(10, (index) => index + 1)
-                          .map((depth) => DropdownMenuItem(
-                                value: depth,
-                                child: Text('$depth層'),
-                              ))
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _maxFolderDepth = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        '（推奨: 2〜3層）',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
@@ -2713,17 +2818,398 @@ class _FolderTreeView extends StatelessWidget {
 }
 
 // ===== Aux Screens =====
-class TutorialScreen extends StatelessWidget { const TutorialScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('使い方')), body: ListView(padding: const EdgeInsets.all(16), children: const [
-    ListTile(leading: Icon(Icons.add_circle_outline), title: Text('1. 追加ボタンからURLを保存')),
-    ListTile(leading: Icon(Icons.search), title: Text('2. 検索・クイックフィルタで探す')),
-    ListTile(leading: Icon(Icons.timer_outlined), title: Text('3. 所要時間や期限で「今読める」を提案')),
-    ListTile(leading: Icon(Icons.check_circle_outline), title: Text('4. 読了マーク＆メモでナレッジ化')),
-  ]));
+class TutorialScreen extends StatelessWidget { 
+  const TutorialScreen({super.key});
+  
+  @override 
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('使い方')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: const [
+          // アプリの概要
+          Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Text('このアプリについて', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text('ウェブ記事を簡単にブックマークし、整理・検索・活用できるアプリです。AIによるサポートも今後充実させていきます。'),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(height: 16),
+          
+          // 基本的な使い方
+          Text('基本的な使い方', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          
+          ListTile(
+            leading: Icon(Icons.add_circle_outline, color: Colors.green),
+            title: Text('1. ブックマークを追加', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('画面右下の「＋追加」ボタンをタップして情報を入力しましょう。Safariなどの共有メニューからも追加できます。タイトルやサムネイルはボタン一つで自動で取得されます。'),
+          ),
+          Divider(),
+          
+          ListTile(
+            leading: Icon(Icons.folder_open, color: Colors.orange),
+            title: Text('2. フォルダで整理', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('フォルダを作成してブックマークを分類、管理しましょう。ドラッグ＆ドロップで並び替えも可能です。フォルダの中に子フォルダを作成できます。'),
+          ),
+          Divider(),
+          
+          ListTile(
+            leading: Icon(Icons.label_outline, color: Colors.purple),
+            title: Text('3. タグで分類', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('タグを付けることで検索しやすくしましょう。1つのブックマークに複数のタグを付けられます。AIによる自動タグ提案機能も利用可能です。'),
+          ),
+          Divider(),
+          
+          ListTile(
+            leading: Icon(Icons.search, color: Colors.blue),
+            title: Text('4. 検索とフィルタ', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('キーワードで検索したり、タグ・フォルダで絞り込んで目当てのブックマークを探しましょう。'),
+          ),
+          Divider(),
+          
+          // ListTile(
+          //   leading: Icon(Icons.check_circle_outline, color: Colors.teal),
+          //   title: Text('5. 読了マーク＆メモ', style: TextStyle(fontWeight: FontWeight.bold)),
+          //   subtitle: Text('読んだ記事には「読了」マークを付けたり、メモを残したりできます。後で見返すときに便利です。'),
+          // ),
+          
+          SizedBox(height: 24),
+          
+          // 便利な機能
+          Text('便利な機能', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          
+          // ListTile(
+          //   leading: Icon(Icons.share, color: Colors.indigo),
+          //   title: Text('共有シートから追加', style: TextStyle(fontWeight: FontWeight.bold)),
+          //   subtitle: Text('Safariや他のアプリで見つけた記事を、共有メニューから直接このアプリに保存できます。'),
+          // ),
+          // Divider(),
+          
+          ListTile(
+            leading: Icon(Icons.pin_outlined, color: Colors.red),
+            title: Text('ピン留め機能', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('重要なブックマークをピン留めして、ホーム画面の上部に固定表示できます。'),
+          ),
+          Divider(),
+          
+          ListTile(
+            leading: Icon(Icons.sort, color: Colors.brown),
+            title: Text('AIブックマーク管理', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('フォルダやタグの構成提案、各ブックマークの割り当てをAIがサポートします。大量のブックマークを効率的に整理できます。'),
+          ),
+          
+          SizedBox(height: 24),
+          
+          // よくある質問
+          Text('よくある質問', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          
+          Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Q. サムネイルが表示されない', style: TextStyle(fontWeight: FontWeight.bold)),
+                  SizedBox(height: 4),
+                  Text('A. 一部のサイト（特にログインが必要なサイト）では自動取得できない場合があります。その場合は手動で画像を設定することも可能です。'),
+                  SizedBox(height: 12),
+                  Text('Q. データのバックアップは？', style: TextStyle(fontWeight: FontWeight.bold)),
+                  SizedBox(height: 4),
+                  Text('A. データはユーザーの端末内に保存されています。メニューの"バックアップ"からデータをエクスポート、インポートすることでバックアップ、復元が可能です。'),
+                  SizedBox(height: 12),
+                  Text('Q. フォルダを削除するとどうなる？', style: TextStyle(fontWeight: FontWeight.bold)),
+                  SizedBox(height: 4),
+                  Text('A. フォルダ内のブックマークは削除されず、「未分類」に移動します。'),
+                ],
+              ),
+            ),
+          ),
+          
+          SizedBox(height: 24),
+          
+          // フッター
+          Center(
+            child: Text(
+              'その他の使い方やご要望は「不具合報告/改善依頼」からご連絡ください',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
 }
 
-class SettingsScreen extends StatelessWidget { const SettingsScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('設定')), body: ListView(children: const [ListTile(title: Text('設定項目')), ListTile(title: Text('通知時間帯')), ListTile(title: Text('テーマ'))]));
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+  
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  String _selectedBrowser = 'default'; // default, safari, chrome, edge
+  bool _isLoading = true;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+  
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _selectedBrowser = prefs.getString('selectedBrowser') ?? 'default';
+      _isLoading = false;
+    });
+  }
+  
+  Future<void> _saveBrowserSetting(String browser) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selectedBrowser', browser);
+    setState(() {
+      _selectedBrowser = browser;
+    });
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('各種設定')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    
+    return Scaffold(
+      appBar: AppBar(title: const Text('各種設定')),
+      body: ListView(
+        children: [
+          // ブラウザ設定（コメントアウト）
+          // const Padding(
+          //   padding: EdgeInsets.all(16),
+          //   child: Text(
+          //     'ブラウザ設定',
+          //     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+          //   ),
+          // ),
+          // ListTile(
+          //   leading: const Icon(Icons.open_in_browser),
+          //   title: const Text('ブックマークを開くブラウザ'),
+          //   subtitle: Text(_getBrowserLabel()),
+          //   trailing: const Icon(Icons.chevron_right),
+          //   onTap: () {
+          //     _showBrowserDialog();
+          //   },
+          // ),
+          // const Padding(
+          //   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          //   child: Text(
+          //     'ブックマークをタップした際に開くブラウザを選択できます',
+          //     style: TextStyle(fontSize: 12, color: Colors.grey),
+          //   ),
+          // ),
+          // const Divider(),
+          
+          // データ管理
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'データ管理',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.red),
+            title: const Text('すべてのデータを削除', style: TextStyle(color: Colors.red)),
+            subtitle: const Text('ブックマーク、フォルダ、タグ、サムネイル画像などをすべて削除'),
+            onTap: () {
+              _showDeleteAllDataDialog();
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              '端末内の本アプリに関連するすべてのデータが削除されます。この操作は取り消せません。',
+              style: TextStyle(fontSize: 12, color: Colors.red),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+  
+  String _getBrowserLabel() {
+    switch (_selectedBrowser) {
+      case 'default':
+        return 'デバイスのデフォルトブラウザ';
+      case 'safari':
+        return 'Safari';
+      case 'chrome':
+        return 'Google Chrome';
+      case 'edge':
+        return 'Microsoft Edge';
+      default:
+        return 'デバイスのデフォルトブラウザ';
+    }
+  }
+  
+  void _showBrowserDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ブラウザを選択'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<String>(
+              title: const Text('デバイスのデフォルトブラウザ'),
+              value: 'default',
+              groupValue: _selectedBrowser,
+              onChanged: (value) async {
+                await _saveBrowserSetting(value!);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('デバイスのデフォルトブラウザに設定しました')),
+                  );
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('Safari'),
+              value: 'safari',
+              groupValue: _selectedBrowser,
+              onChanged: (value) async {
+                await _saveBrowserSetting(value!);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Safariに設定しました')),
+                  );
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('Google Chrome'),
+              value: 'chrome',
+              groupValue: _selectedBrowser,
+              onChanged: (value) async {
+                await _saveBrowserSetting(value!);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Google Chromeに設定しました')),
+                  );
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('Microsoft Edge'),
+              value: 'edge',
+              groupValue: _selectedBrowser,
+              onChanged: (value) async {
+                await _saveBrowserSetting(value!);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Microsoft Edgeに設定しました')),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  void _showDeleteAllDataDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('データ削除の確認'),
+        content: const Text(
+          'すべてのブックマーク、フォルダ、タグ、サムネイル画像が完全に削除されます。\n\nこの操作は取り消せません。本当に削除しますか？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              
+              // 削除処理を実行
+              try {
+                final store = StoreProvider.of(context);
+                
+                // すべてのブックマークを削除（サムネイル画像も削除される）
+                final bookmarks = List.from(store.bookmarks);
+                for (final bm in bookmarks) {
+                  await store.removeBookmark(bm);
+                }
+                
+                // すべてのタグを削除
+                final tags = List.from(store.tags);
+                for (final tag in tags) {
+                  await store.removeTag(tag);
+                }
+                
+                // すべてのフォルダを削除
+                final folders = List.from(store.folders);
+                for (final folder in folders) {
+                  await store.deleteFolder(folder.id);
+                }
+                
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('すべてのデータを削除しました'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('削除中にエラーが発生しました: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class ReportScreen extends StatelessWidget { const ReportScreen({super.key});
@@ -2746,16 +3232,184 @@ class ReportScreen extends StatelessWidget { const ReportScreen({super.key});
   }
 }
 
-class PrivacyScreen extends StatelessWidget { const PrivacyScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('プライバシーポリシー')), body: const Padding(padding: EdgeInsets.all(16), child: Text('・端末内保存を基本とし、サーバ送信は行いません\n・診断情報は収集しません\n・要約等のAI機能はユーザー同意の上、有効化します')));
+class PrivacyScreen extends StatelessWidget { 
+  const PrivacyScreen({super.key});
+  
+  @override 
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('プライバシーポリシー')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: const [
+          Text(
+            'プライバシーポリシー',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '最終更新日: 2025年10月18日',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          SizedBox(height: 24),
+          
+          // データの保存場所
+          Text(
+            '1. データの保存について',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '本アプリで作成・保存されたブックマーク、フォルダ、タグ、メモなどのすべてのデータは、ユーザー様の端末内にのみ保存されます。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '第三者のサーバーや外部サービスにデータが送信されることは、AI機能を使用する場合を除き、一切ありません。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 24),
+          
+          // AI機能について
+          Text(
+            '2. AI機能のデータ送信について',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '本アプリでは、AI機能（自動タグ提案、フォルダ分類など）を提供しています。これらの機能を使用する場合に限り、以下の情報がサーバーに送信されます：',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 8),
+          Padding(
+            padding: EdgeInsets.only(left: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('• ブックマークのタイトル', style: TextStyle(height: 1.5)),
+                Text('• フォルダ名', style: TextStyle(height: 1.5)),
+                Text('• タグ名', style: TextStyle(height: 1.5)),
+                Text('• ブックマークの概要（抜粋）', style: TextStyle(height: 1.5)),
+              ],
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '送信されたデータは、AI機能の提供および改善のために使用され、機械学習モデルのトレーニングに用いられる可能性があります。',
+            style: TextStyle(height: 1.5, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'AI機能は任意でご利用いただけます。使用しない場合、データがサーバーに送信されることはありません。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 24),
+          
+          // 診断情報
+          Text(
+            '3. 診断情報・分析について',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '本アプリは、ユーザー様の利用状況、診断情報、分析データなどを収集いたしません。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 24),
+          
+          // 第三者への提供
+          Text(
+            '4. 第三者への情報提供',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '本アプリは、ユーザー様の個人情報や利用データを第三者に販売、共有、または提供することはありません。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'ただし、AI機能を使用する場合は、前述の通り、AI処理のために必要なデータがサーバーに送信されます。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 24),
+          
+          // データの削除
+          Text(
+            '5. データの削除',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'アプリをアンインストールすることで、端末内に保存されているすべてのデータが削除されます。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 24),
+          
+          // セキュリティ
+          Text(
+            '6. セキュリティ',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'データは端末内に保存されるため、端末のセキュリティ設定（パスコード、生体認証など）によって保護されます。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 24),
+          
+          // ポリシーの変更
+          Text(
+            '7. プライバシーポリシーの変更',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '本プライバシーポリシーは、必要に応じて変更されることがあります。変更後のポリシーは、アプリ内で確認できます。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 24),
+          
+          // お問い合わせ
+          Text(
+            '8. お問い合わせ',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'プライバシーポリシーに関するご質問は、「不具合報告/改善依頼」からお問い合わせください。',
+            style: TextStyle(height: 1.5),
+          ),
+          SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
 }
 
 // ===== Add Sheet =====
 class AddBookmarkSheet extends StatefulWidget { 
   final String? folderId;
   final BookmarkModel? bm; // 編集モード用
-  const AddBookmarkSheet({super.key, this.folderId, this.bm}); 
-  @override State<AddBookmarkSheet> createState() => _AddBookmarkSheetState(); 
+  final String? initialUrl; // Share Extensionから渡されるURL
+  final String? initialTitle; // Share Extensionから渡されるタイトル
+  final String? initialExcerpt; // Share Extensionから渡されるメモ
+  final String? initialTagsText; // Share Extensionから渡されるタグ（カンマ区切り）
+  final String? initialFolderName; // Share Extensionから渡されるフォルダ名
+  
+  const AddBookmarkSheet({
+    super.key, 
+    this.folderId, 
+    this.bm,
+    this.initialUrl,
+    this.initialTitle,
+    this.initialExcerpt,
+    this.initialTagsText,
+    this.initialFolderName,
+  }); 
+  
+  @override 
+  State<AddBookmarkSheet> createState() => _AddBookmarkSheetState(); 
 }
 
 class _AddBookmarkSheetState extends State<AddBookmarkSheet> {
@@ -2780,6 +3434,53 @@ class _AddBookmarkSheetState extends State<AddBookmarkSheet> {
       _memo.text = widget.bm!.excerpt;
       _selected.addAll(widget.bm!.tags);
       _thumbnailUrl = widget.bm!.thumbnailUrl;
+    } else {
+      // Share Extensionからのデータを設定
+      if (widget.initialUrl != null) {
+        _url.text = widget.initialUrl!;
+      }
+      if (widget.initialTitle != null) {
+        _title.text = widget.initialTitle!;
+      }
+      if (widget.initialExcerpt != null && widget.initialExcerpt!.isNotEmpty) {
+        _memo.text = widget.initialExcerpt!;
+      }
+      // Build後にcontextを使ってフォルダ/タグを解決
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final store = StoreProvider.of(context);
+        // フォルダ名からIDを解決
+        if (widget.initialFolderName != null && widget.initialFolderName!.isNotEmpty) {
+          final folder = store.folders.firstWhere(
+            (f) => f.name == widget.initialFolderName,
+            orElse: () => FolderModel(id: '', name: '', sortOrder: 0),
+          );
+          if (folder.id.isNotEmpty) {
+            setState(() { _folderId = folder.id; });
+          }
+        }
+        // タグ文字列を選択に反映（既存タグのみ）
+        if (widget.initialTagsText != null && widget.initialTagsText!.isNotEmpty) {
+          final names = widget.initialTagsText!
+              .split(',')
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+          if (names.isNotEmpty) {
+            setState(() {
+              for (final name in names) {
+                final tag = store.tags.firstWhere(
+                  (t) => t.name == name,
+                  orElse: () => TagModel(id: '', name: ''),
+                );
+                if (tag.id.isNotEmpty && !_selected.any((t) => t.id == tag.id)) {
+                  _selected.add(tag);
+                }
+              }
+            });
+          }
+        }
+      });
     }
   }
   
@@ -3417,19 +4118,6 @@ void _mockRestore(BuildContext context) {
   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('購入情報を復元しました')));
 }
 
-void _runAutoFolder(BuildContext context) {
-  final store = StoreProvider.of(context);
-  // タグ名に対応するフォルダを自動作成（既存はスキップ）
-  final names = <String>{...store.tags.map((t) => t.name)};
-  final created = <String>[];
-  for (final name in names) {
-    final exists = store.folders.any((f) => f.name.toLowerCase() == name.toLowerCase());
-    if (!exists) { store.folders.add(FolderModel(id: _id(), name: name)); created.add(name); }
-  }
-  store.updateBookmark(store.bookmarks.first); // Trigger notifyListeners
-  final msg = created.isEmpty ? '新規フォルダはありません' : '自動作成: ${created.join(', ')}';
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-}
 
 // ===== Tag Management Dialogs =====
 void _showAddTagDialog(BuildContext context) {

@@ -1,0 +1,18 @@
+{
+  "" : {
+    "diagnostics" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-master.dia",
+    "emit-module-dependencies" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-master-emit-module.dia",
+    "swift-dependencies" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-master.swiftdeps"
+  },
+  "/Users/hashinokuchishougo/bookmark/frontend/ios/ShareExtension/ShareViewController.swift" : {
+    "const-values" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7.swiftconstvalues",
+    "dependencies" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7.d",
+    "diagnostics" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7.dia",
+    "index-unit-output-path" : "/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7.o",
+    "llvm-bc" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7.bc",
+    "object" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7.o",
+    "swift-dependencies" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7.swiftdeps",
+    "swiftmodule" : "/Users/hashinokuchishougo/bookmark/frontend/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController-aadf5fceeecd44a2475db158d1c199d7~partial.swiftmodule"
+  }
+}
