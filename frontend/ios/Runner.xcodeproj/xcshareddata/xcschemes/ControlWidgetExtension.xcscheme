@@ -58,15 +58,9 @@
       allowLocationSimulation = "YES"
       launchAutomaticallySubstyle = "2">
       <RemoteRunnable
-         runnableDebuggingMode = "2"
-         BundleIdentifier = "com.apple.springboard">
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "02E217FC2EA860A600228CC7"
-            BuildableName = "ControlWidgetExtension.appex"
-            BlueprintName = "ControlWidgetExtension"
-            ReferencedContainer = "container:Runner.xcodeproj">
-         </BuildableReference>
+         runnableDebuggingMode = "0"
+         BundleIdentifier = "com.example.bookmarkMock"
+         RemotePath = "/var/containers/Bundle/Application/BC965157-D0A7-41C2-A54C-B58BBC26120D/Runner.app">
       </RemoteRunnable>
       <MacroExpansion>
          <BuildableReference

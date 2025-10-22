@@ -32,6 +32,8 @@ import 'services/tag_suggestion_service.dart';
 import 'services/tag_analysis_service.dart';
 import 'services/share_extension_service.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'widgets/rewarded_ad_manager.dart';
 
 // フォルダカードのアコーディオン展開/折りたたみアイコン付きタイル
 class _AccordionFolderTile extends StatefulWidget {
@@ -192,11 +194,17 @@ Future<Database> getDatabase() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Google Mobile Ads SDK の初期化
+  MobileAds.instance.initialize();
+  
   // Share Extension サービスの初期化
   ShareExtensionService.initialize();
   
   // ローカルDBの初期化
   await getDatabase();
+  
+  // リワード広告を事前に読み込み
+  RewardedAdManager.loadAd();
   
   runApp(const BookmarkApp());
 }
@@ -1741,6 +1749,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _analyzeTagStructure(BuildContext context) async {
+    // リワード広告を表示
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('広告視聴'),
+        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('視聴する'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed != true) return;
+
+    // 広告を表示して報酬獲得を待つ
+    final adCompleted = await RewardedAdManager.showAd();
+
+    if (!adCompleted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('広告を最後まで視聴する必要があります'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final store = StoreProvider.of(context);
     
     setState(() => _isAnalyzing = true);
@@ -1794,6 +1838,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _bulkAssignTags(BuildContext context) async {
+    // リワード広告を表示
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('広告視聴'),
+        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('視聴する'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed != true) return;
+
+    // 広告を表示して報酬獲得を待つ
+    final adCompleted = await RewardedAdManager.showAd();
+
+    if (!adCompleted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('広告を最後まで視聴する必要があります'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final store = StoreProvider.of(context);
     
     setState(() => _isBulkAssigning = true);
@@ -1862,6 +1942,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _bulkAssignFolders(BuildContext context) async {
+    // リワード広告を表示
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('広告視聴'),
+        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('視聴する'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed != true) return;
+
+    // 広告を表示して報酬獲得を待つ
+    final adCompleted = await RewardedAdManager.showAd();
+
+    if (!adCompleted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('広告を最後まで視聴する必要があります'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final store = StoreProvider.of(context);
     
     setState(() => _isBulkAssigningFolders = true);
@@ -2062,6 +2178,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _analyzeFolderStructure(BuildContext context) async {
+    // リワード広告を表示
+    final shouldProceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('広告視聴'),
+        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('視聴する'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed != true) return;
+
+    // 広告を表示して報酬獲得を待つ
+    final adCompleted = await RewardedAdManager.showAd();
+
+    if (!adCompleted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('広告を最後まで視聴する必要があります'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final store = StoreProvider.of(context);
     
     setState(() => _isAnalyzingFolders = true);
