@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_links/app_links.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 
 // Models
 import 'models/tag_model.dart';
@@ -127,7 +129,7 @@ Future<Database> getDatabase() async {
   
   _database = await openDatabase(
     path,
-    version: 1,
+    version: 2,
     onCreate: (db, version) async {
       // bookmarksテーブル
       await db.execute('''
@@ -143,7 +145,8 @@ Future<Database> getDatabase() async {
           folder_id TEXT,
           open_count INTEGER DEFAULT 0,
           last_opened_at TEXT,
-          thumbnail_url TEXT
+          thumbnail_url TEXT,
+          sort_order INTEGER DEFAULT 0
         )
       ''');
       
@@ -169,9 +172,17 @@ Future<Database> getDatabase() async {
         CREATE TABLE folders (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
-          parent_id TEXT
+          parent_id TEXT,
+          sort_order INTEGER DEFAULT 0
         )
       ''');
+    },
+    onUpgrade: (db, oldVersion, newVersion) async {
+      if (oldVersion < 2) {
+        // バージョン1から2へのアップグレード：sort_orderカラムを追加
+        await db.execute('ALTER TABLE bookmarks ADD COLUMN sort_order INTEGER DEFAULT 0');
+        await db.execute('ALTER TABLE folders ADD COLUMN sort_order INTEGER DEFAULT 0');
+      }
     },
   );
   
@@ -501,6 +512,174 @@ class AppStore extends ChangeNotifier {
   }
 
   List<BookmarkModel> byFolder(String folderId) => bookmarks.where((b) => b.folderId == folderId).toList();
+
+  /// フォルダとそのすべてのサブフォルダ内のブックマーク数を再帰的にカウント
+  int countBookmarksRecursive(String folderId) {
+    int count = byFolder(folderId).length;
+    
+    // サブフォルダを探す
+    FolderModel? findFolder(List<FolderModel> folders) {
+      for (final f in folders) {
+        if (f.id == folderId) return f;
+        final sub = findFolder(f.children);
+        if (sub != null) return sub;
+      }
+      return null;
+    }
+    
+    final folder = findFolder(folders);
+    if (folder != null) {
+      for (final child in folder.children) {
+        count += countBookmarksRecursive(child.id);
+      }
+    }
+    
+    return count;
+  }
+
+  // ===== バックアップ機能 =====
+  
+  /// データをJSON形式でエクスポート
+  Future<Map<String, dynamic>> exportData() async {
+    try {
+      await fetchTags();
+      await fetchFolders();
+      await fetchBookmarks();
+
+      return {
+        'version': '1.0.0',
+        'exported_at': DateTime.now().toIso8601String(),
+        'tags': tags.map((tag) => {
+          'id': tag.id,
+          'name': tag.name,
+        }).toList(),
+        'folders': _exportFoldersRecursive(folders),
+        'bookmarks': bookmarks.map((bm) => {
+          'id': bm.id,
+          'title': bm.title,
+          'url': bm.url,
+          'excerpt': bm.excerpt,
+          'folder_id': bm.folderId,
+          'thumbnail_url': bm.thumbnailUrl,
+          'is_pinned': bm.isPinned,
+          'is_read': bm.readAt != null,
+          'is_archived': bm.isArchived,
+          'open_count': bm.openCount,
+          'created_at': bm.createdAt.toIso8601String(),
+          'read_at': bm.readAt?.toIso8601String(),
+          'last_opened_at': bm.lastOpenedAt?.toIso8601String(),
+          'sort_order': bm.sortOrder,
+          'tags': bm.tags.map((t) => t.id).toList(),
+        }).toList(),
+      };
+    } catch (e) {
+      debugPrint('Error exporting data: $e');
+      rethrow;
+    }
+  }
+
+  List<Map<String, dynamic>> _exportFoldersRecursive(List<FolderModel> folders) {
+    return folders.map((folder) => {
+      'id': folder.id,
+      'name': folder.name,
+      'parent_id': folder.parentId,
+      'sort_order': folder.sortOrder,
+      'children': _exportFoldersRecursive(folder.children),
+    }).toList();
+  }
+
+  /// JSONデータからインポート
+  Future<void> importData(Map<String, dynamic> data, {bool clearExisting = false}) async {
+    try {
+      if (clearExisting) {
+        // 既存データをクリア
+        for (final bm in bookmarks) {
+          await _bookmarkRepo.delete(bm.id);
+        }
+        for (final folder in folders) {
+          await _folderRepo.delete(folder.id);
+        }
+        for (final tag in tags) {
+          await _tagRepo.delete(tag.id);
+        }
+      }
+
+      // タグをインポート（IDを保持）
+      final tagsData = data['tags'] as List<dynamic>;
+      final db = await getDatabase();
+      for (final tagData in tagsData) {
+        await db.insert(
+          'tags',
+          {
+            'id': tagData['id'] as String,
+            'name': tagData['name'] as String,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      // フォルダを階層的にインポート（IDを保持）
+      final foldersData = data['folders'] as List<dynamic>;
+      await _importFoldersRecursive(foldersData, null, db);
+
+      // ブックマークをインポート
+      await fetchTags(); // タグIDマッピング用
+      final bookmarksData = data['bookmarks'] as List<dynamic>;
+      for (final bmData in bookmarksData) {
+        final tagIds = (bmData['tags'] as List<dynamic>).cast<String>();
+        final bmTags = tags.where((t) => tagIds.contains(t.id)).toList();
+        
+        final bm = BookmarkModel(
+          id: bmData['id'] as String,
+          title: bmData['title'] as String,
+          url: bmData['url'] as String,
+          excerpt: bmData['excerpt'] as String? ?? '',
+          folderId: bmData['folder_id'] as String?,
+          tags: bmTags,
+          thumbnailUrl: bmData['thumbnail_url'] as String?,
+          isPinned: bmData['is_pinned'] as bool? ?? false,
+          isArchived: bmData['is_archived'] as bool? ?? false,
+          openCount: bmData['open_count'] as int? ?? 0,
+          createdAt: DateTime.parse(bmData['created_at'] as String),
+          readAt: bmData['read_at'] != null ? DateTime.parse(bmData['read_at'] as String) : null,
+          lastOpenedAt: bmData['last_opened_at'] != null ? DateTime.parse(bmData['last_opened_at'] as String) : null,
+          sortOrder: bmData['sort_order'] as int? ?? 0,
+        );
+        
+        await _bookmarkRepo.create(bm);
+      }
+
+      // データを再取得
+      await fetchTags();
+      await fetchFolders();
+      await fetchBookmarks();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error importing data: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _importFoldersRecursive(List<dynamic> foldersData, String? parentId, Database db) async {
+    for (final folderData in foldersData) {
+      await db.insert(
+        'folders',
+        {
+          'id': folderData['id'] as String,
+          'name': folderData['name'] as String,
+          'parent_id': parentId,
+          'sort_order': folderData['sort_order'] as int? ?? 0,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      
+      // 子フォルダを再帰的にインポート
+      final children = folderData['children'] as List<dynamic>?;
+      if (children != null && children.isNotEmpty) {
+        await _importFoldersRecursive(children, folderData['id'] as String, db);
+      }
+    }
+  }
 }
 
 enum QuickFilter { none }
@@ -728,6 +907,25 @@ class AppDrawer extends StatelessWidget {
               _NavTile(context, icon: Icons.menu_book_outlined, label: '使い方', page: const TutorialScreen()),
               _NavTile(context, icon: Icons.settings_outlined, label: '各種設定', page: const SettingsScreen()),
 
+              // --- バックアップ（見出し→ボタン群）
+              _GroupTitle('バックアップ'),
+              ListTile(
+                leading: const Icon(Icons.upload_outlined),
+                title: const Text('データエクスポート'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _exportBackup(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.download_outlined),
+                title: const Text('データインポート'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _importBackup(context);
+                },
+              ),
+
               // --- AI（見出し→ボタン）
 
               // --- 問い合わせ（見出し→ボタン）
@@ -783,6 +981,120 @@ Widget _NavTile(BuildContext context, {required IconData icon, required String l
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
     },
   );
+}
+
+// ===== バックアップ機能 =====
+
+/// データをエクスポート
+Future<void> _exportBackup(BuildContext context) async {
+  final store = StoreProvider.of(context);
+  
+  try {
+    // データをエクスポート
+    final data = await store.exportData();
+    final jsonString = const JsonEncoder.withIndent('  ').convert(data);
+    
+    // 一時ファイルに保存
+    final directory = await getTemporaryDirectory();
+    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.')[0];
+    final filePath = '${directory.path}/bookmark_backup_$timestamp.json';
+    final file = File(filePath);
+    await file.writeAsString(jsonString);
+    
+    // 共有
+    final result = await Share.shareXFiles(
+      [XFile(filePath)],
+      subject: 'ブックマークバックアップ',
+      text: 'ブックマークデータをエクスポートしました',
+    );
+    
+    if (context.mounted) {
+      if (result.status == ShareResultStatus.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('データをエクスポートしました')),
+        );
+      }
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('エクスポートエラー: $e')),
+      );
+    }
+  }
+}
+
+/// データをインポート
+Future<void> _importBackup(BuildContext context) async {
+  final store = StoreProvider.of(context);
+  
+  try {
+    // ファイル選択
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    
+    if (result == null || result.files.isEmpty) {
+      return; // キャンセル
+    }
+    
+    final filePath = result.files.single.path;
+    if (filePath == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ファイルパスが取得できませんでした')),
+        );
+      }
+      return;
+    }
+    
+    // ファイル読み込み
+    final file = File(filePath);
+    final jsonString = await file.readAsString();
+    final data = json.decode(jsonString) as Map<String, dynamic>;
+    
+    // 確認ダイアログ
+    if (context.mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('データインポート'),
+          content: const Text(
+            '既存のデータを削除して、バックアップデータをインポートしますか？\n'
+            '\n※この操作は取り消せません',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('インポート'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirmed != true) return;
+    }
+    
+    // インポート実行
+    await store.importData(data, clearExisting: true);
+    
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('データをインポートしました')),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('インポートエラー: $e')),
+      );
+    }
+  }
 }
 
 // ===== Home (Frequent + Folders + List) =====
@@ -2761,7 +3073,7 @@ class _FolderTreeView extends StatelessWidget {
         onReorder: onReorder!,
         itemBuilder: (c, i) {
           final folder = folders[i];
-          final count = store.byFolder(folder.id).length;
+          final count = store.countBookmarksRecursive(folder.id);
           // final hasChildren = folder.children.isNotEmpty; // not used
 
           // 全てのフォルダカードをAccordionFolderTileで統一
@@ -2797,7 +3109,7 @@ class _FolderTreeView extends StatelessWidget {
       },
       itemBuilder: (c, i) {
         final folder = folders[i];
-        final count = store.byFolder(folder.id).length;
+        final count = store.countBookmarksRecursive(folder.id);
         // すべてのフォルダカードをアコーディオンカードで表示
         return _AccordionFolderTile(
           key: ValueKey(folder.id),
@@ -2912,6 +3224,13 @@ class TutorialScreen extends StatelessWidget {
             leading: Icon(Icons.sort, color: Colors.brown),
             title: Text('AIブックマーク管理', style: TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text('フォルダやタグの構成提案、各ブックマークの割り当てをAIがサポートします。大量のブックマークを効率的に整理できます。'),
+          ),
+          Divider(),
+          
+          ListTile(
+            leading: Icon(Icons.backup_outlined, color: Colors.green),
+            title: Text('バックアップ機能', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('メニューから「データエクスポート」でブックマーク、フォルダ、タグをJSON形式で保存できます。「データインポート」で復元も可能です。機種変更時やデータ移行に便利です。'),
           ),
           
           SizedBox(height: 24),

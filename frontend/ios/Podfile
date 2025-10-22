@@ -28,6 +28,8 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
+  use_modular_headers!
+  
   # Avoid dynamic frameworks to prevent 'Pods_Runner.framework not found' on device builds.
   # Flutter defaults work best without use_frameworks! unless a specific pod requires it.
   # If you must enable frameworks, prefer: use_frameworks! :linkage => :static
