@@ -176,7 +176,7 @@ URL: {request.url}
                     "content": prompt
                 }
             ],
-            reasoning_effort="medium",
+            # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=2000
         )
 
@@ -328,7 +328,7 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
                     "content": prompt
                 }
             ],
-            reasoning_effort="medium",
+            # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
             response_format={"type": "json_object"}
         )
@@ -438,7 +438,7 @@ URL: {url}
             try:
                 # OpenAI APIを呼び出し
                 response = client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gpt-5-mini",
                     messages=[
                         {
                             "role": "system",
@@ -671,7 +671,7 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
                     "content": prompt
                 }
             ],
-            reasoning_effort="medium",
+            # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
             response_format={"type": "json_object"}
         )
@@ -838,7 +838,7 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
                     "content": prompt
                 }
             ],
-            reasoning_effort="medium",
+            # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
             response_format={"type": "json_object"}
         )
