@@ -37,6 +37,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'widgets/rewarded_ad_manager.dart';
 import 'widgets/ad_banner.dart';
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
+import 'package:in_app_review/in_app_review.dart';
 
 // ====== API設定 ======
 // バックエンドAPI環境の切り替え
@@ -253,6 +254,41 @@ Future<void> _requestATT() async {
     }
   } catch (e) {
     debugPrint('ATTリクエストエラー: $e');
+  }
+}
+
+// レビュー催促処理（ブックマーク10個登録時）
+Future<void> _checkAndRequestReviewOnBookmarkMilestone() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    const String reviewRequestedKey = 'review_requested';
+    
+    // すでにレビュー催促を表示したことがあるか確認
+    final bool reviewRequested = prefs.getBool(reviewRequestedKey) ?? false;
+    if (reviewRequested) {
+      return; // すでに表示済みなら何もしない
+    }
+    
+    // ブックマークの総数を取得
+    final db = await getDatabase();
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM bookmarks');
+    final int bookmarkCount = Sqflite.firstIntValue(result) ?? 0;
+    
+    debugPrint('� 現在のブックマーク数: $bookmarkCount');
+    
+    // 10個に達したらレビュー催促
+    if (bookmarkCount >= 10) {
+      final InAppReview inAppReview = InAppReview.instance;
+      
+      // レビュー機能が利用可能か確認
+      if (await inAppReview.isAvailable()) {
+        await inAppReview.requestReview();
+        await prefs.setBool(reviewRequestedKey, true); // 催促済みフラグを立てる
+        debugPrint('✅ レビュー催促を表示しました（ブックマーク10個達成）');
+      }
+    }
+  } catch (e) {
+    debugPrint('レビュー催促エラー: $e');
   }
 }
 
@@ -1199,6 +1235,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String folderSort = 'name_asc';
   List<BookmarkModel>? pinnedOrder;
   List<FolderModel>? folderOrder;
+  bool _isProcessingSharedData = false; // 共有データ処理中フラグ
 
   @override
   void initState() {
@@ -1223,6 +1260,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // 共有データを処理
   void _handleSharedData(Map<String, String> data) async {
     if (!mounted) return;
+    
+    // 共有処理開始フラグ
+    final isFirstInBatch = !_isProcessingSharedData;
+    _isProcessingSharedData = true;
     
     final url = data['url'];
     final title = data['title'];
@@ -1275,11 +1316,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
       try {
         await store.addBookmark(bm);
-        if (mounted) {
+        // 最初のブックマーク追加時のみSnackBarを表示
+        if (mounted && isFirstInBatch) {
           ScaffoldMessenger.of(this.context).showSnackBar(
             const SnackBar(content: Text('共有からブックマークを追加しました')),
           );
         }
+        // ブックマーク登録後、レビュー催促チェック
+        await _checkAndRequestReviewOnBookmarkMilestone();
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(this.context).showSnackBar(
@@ -1298,8 +1342,15 @@ class _HomeScreenState extends State<HomeScreen> {
         if (nextData != null) {
           // 次のブックマークを処理
           _handleSharedData(nextData);
+        } else {
+          // すべての処理が完了したらフラグをリセット
+          _isProcessingSharedData = false;
         }
+      } else {
+        _isProcessingSharedData = false;
       }
+    } else {
+      _isProcessingSharedData = false;
     }
   }
 
@@ -4617,6 +4668,8 @@ class _AddBookmarkSheetState extends State<AddBookmarkSheet> {
                       await store.addBookmark(bm);
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ブックマークを保存しました')));
+                      // ブックマーク登録後、レビュー催促チェック
+                      await _checkAndRequestReviewOnBookmarkMilestone();
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('保存失敗: $e')),
