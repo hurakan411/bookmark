@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import '../main.dart' show showBannerAds;
 
 /// AdMobバナー広告ウィジェット
 /// 
 /// 上部・下部に配置可能なバナー広告を表示します。
 /// テスト用広告IDが設定されているため、本番環境では適切な広告IDに変更してください。
+/// 
+/// デバッグ用フラグ `showBannerAds` が false の場合は、広告を表示しません。
 class AdBanner extends StatefulWidget {
   const AdBanner({super.key});
 
@@ -20,13 +23,16 @@ class _AdBannerState extends State<AdBanner> {
   static const int _maxLoadAttempts = 3;
 
   // 広告ID設定（本番環境では変更してください）
-  static const String _iosAdUnitId = 'ca-app-pub-3940256099942544/2934735716'; // テスト用
+  static const String _iosAdUnitId = 'ca-app-pub-1732522218412052/8822742920';
   static const String _androidAdUnitId = 'ca-app-pub-3940256099942544/6300978111'; // テスト用
 
   @override
   void initState() {
     super.initState();
-    _loadAd();
+    // デバッグフラグがtrueの場合のみ広告を読み込む
+    if (showBannerAds) {
+      _loadAd();
+    }
   }
 
   void _loadAd() {
@@ -88,6 +94,11 @@ class _AdBannerState extends State<AdBanner> {
 
   @override
   Widget build(BuildContext context) {
+    // デバッグフラグがfalseの場合は何も表示しない
+    if (!showBannerAds) {
+      return const SizedBox.shrink();
+    }
+    
     if (_bannerAd == null || !_isLoaded) {
       // 読み込み中のプレースホルダーを表示
       return Container(

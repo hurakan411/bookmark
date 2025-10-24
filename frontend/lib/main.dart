@@ -58,8 +58,9 @@ const Map<ApiEnvironment, String> apiBaseUrls = {
 // 現在使用するベースURL
 String get apiBaseUrl => apiBaseUrls[currentApiEnvironment]!;
 
-// ====== デバッグ用: リワード広告必須フラグ ======
-const bool requireRewardedAdForAI = true; // falseで広告スキップ（デバッグ用）
+// ====== デバッグ用: 広告表示フラグ ======
+const bool requireRewardedAdForAI = false; // falseで広告スキップ（デバッグ用）
+const bool showBannerAds = false; // falseでバナー広告非表示（デバッグ用）
 
 // フォルダカードのアコーディオン展開/折りたたみアイコン付きタイル
 class _AccordionFolderTile extends StatefulWidget {

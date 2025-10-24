@@ -7,7 +7,7 @@ class RewardedAdManager {
   static RewardedAd? _rewardedAd;
   static bool _isLoaded = false;
 
-  static const String _iosAdUnitId = 'ca-app-pub-3940256099942544/1712485313'; // テスト用
+  static const String _iosAdUnitId = 'ca-app-pub-1732522218412052/4039559228'; // テスト用
   static const String _androidAdUnitId = 'ca-app-pub-3940256099942544/5224354917'; // テスト用
 
   static Future<void> loadAd() async {
