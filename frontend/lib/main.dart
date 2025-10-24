@@ -36,6 +36,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'widgets/rewarded_ad_manager.dart';
 import 'widgets/ad_banner.dart';
+import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 
 // ====== API設定 ======
 // バックエンドAPI環境の切り替え
@@ -230,7 +231,29 @@ Future<void> main() async {
   // リワード広告を事前に読み込み
   RewardedAdManager.loadAd();
   
+  // App Tracking Transparency (ATT) のリクエスト (iOS のみ)
+  if (Platform.isIOS) {
+    await _requestATT();
+  }
+  
   runApp(const BookmarkApp());
+}
+
+// ATTリクエスト処理
+Future<void> _requestATT() async {
+  try {
+    // トラッキング許可状況を確認
+    final status = await AppTrackingTransparency.trackingAuthorizationStatus;
+    
+    // まだ許可を求めていない場合のみ表示
+    if (status == TrackingStatus.notDetermined) {
+      // 少し待ってからダイアログを表示（アプリが完全に起動してから）
+      await Future.delayed(const Duration(milliseconds: 500));
+      await AppTrackingTransparency.requestTrackingAuthorization();
+    }
+  } catch (e) {
+    debugPrint('ATTリクエストエラー: $e');
+  }
 }
 
 // ===== App Root =====
