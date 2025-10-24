@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' hide context;
@@ -34,6 +35,29 @@ import 'services/share_extension_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'widgets/rewarded_ad_manager.dart';
+import 'widgets/ad_banner.dart';
+
+// ====== API設定 ======
+// バックエンドAPI環境の切り替え
+enum ApiEnvironment {
+  local,    // ローカル開発環境 (localhost:8000)
+  render,   // Render.com 本番環境
+}
+
+// 現在の環境設定（ここを変更するだけで切り替え可能）
+const ApiEnvironment currentApiEnvironment = ApiEnvironment.render;
+
+// 環境ごとのベースURL
+const Map<ApiEnvironment, String> apiBaseUrls = {
+  ApiEnvironment.local: 'http://localhost:8000',
+  ApiEnvironment.render: 'https://bookmark-zhnd.onrender.com',
+};
+
+// 現在使用するベースURL
+String get apiBaseUrl => apiBaseUrls[currentApiEnvironment]!;
+
+// ====== デバッグ用: リワード広告必須フラグ ======
+const bool requireRewardedAdForAI = true; // falseで広告スキップ（デバッグ用）
 
 // フォルダカードのアコーディオン展開/折りたたみアイコン付きタイル
 class _AccordionFolderTile extends StatefulWidget {
@@ -716,7 +740,8 @@ class StoreProvider extends InheritedNotifier<AppStore> {
 // ===== Root with Drawer + Bottom Nav =====
 class RootScreen extends StatefulWidget { const RootScreen({super.key}); @override State<RootScreen> createState() => _RootScreenState(); }
 class _RootScreenState extends State<RootScreen> {
-  final store = AppStore();
+  // Use the shared AppStore from StoreProvider instead of creating a new one
+  late AppStore store;
   final scaffoldKey = GlobalKey<ScaffoldState>();
   int idx = 0;
   bool _initialized = false;
@@ -731,8 +756,17 @@ class _RootScreenState extends State<RootScreen> {
   @override
   void initState() {
     super.initState();
-    _initialize();
     _initDeepLinks();
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Obtain the shared store from the provider once the context is ready
+    store = StoreProvider.of(context);
+    if (!_initialized) {
+      _initialize();
+    }
   }
   
   @override
@@ -809,15 +843,21 @@ class _RootScreenState extends State<RootScreen> {
             SmartFolderScreen(scaffoldKey: scaffoldKey),
           ],
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: idx,
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'ホーム'),
-            NavigationDestination(icon: Icon(Icons.bookmark_outline), selectedIcon: Icon(Icons.bookmark), label: 'ブックマーク一覧'),
-            NavigationDestination(icon: Icon(Icons.tag_outlined), selectedIcon: Icon(Icons.tag), label: 'タグ一覧'),
-            NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'AIツール'),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AdBanner(),
+            NavigationBar(
+              selectedIndex: idx,
+              destinations: const [
+                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'ホーム'),
+                NavigationDestination(icon: Icon(Icons.bookmark_outline), selectedIcon: Icon(Icons.bookmark), label: '全ブックマーク'),
+                NavigationDestination(icon: Icon(Icons.tag_outlined), selectedIcon: Icon(Icons.tag), label: 'タグ一覧'),
+                NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'AIツール'),
+              ],
+              onDestinationSelected: _goTab,
+            ),
           ],
-          onDestinationSelected: _goTab,
         ),
         floatingActionButton: (idx == 3 || idx == 2)
             ? null // タグ一覧ページ・AIツールページは追加ボタン非表示
@@ -891,7 +931,7 @@ class AppDrawer extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Bookmark Manager', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
+                              const Text('AI Bookmark Manager', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
                             ],
                           ),
                         ),
@@ -950,8 +990,26 @@ class AppDrawer extends StatelessWidget {
 
               // --- App課金（見出し→ボタン）
               _GroupTitle('App課金'),
-              ListTile(leading: const Icon(Icons.hide_image_outlined), title: const Text('広告削除'), onTap: () { Navigator.pop(context); _mockPurchase(context, title: '広告削除'); }),
-              ListTile(leading: const Icon(Icons.restore_outlined), title: const Text('購入記録を復元'), onTap: () { Navigator.pop(context); _mockRestore(context); }),
+              ListTile(
+                leading: const Icon(Icons.hide_image_outlined),
+                title: const Text('広告削除'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('近日中に実装予定です。お待ちください')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.restore_outlined),
+                title: const Text('購入記録を復元'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('近日中に実装予定です。お待ちください')),
+                  );
+                },
+              ),
 
               // --- その他（見出し→ボタン）
               _GroupTitle('その他'),
@@ -1269,7 +1327,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final store = StoreProvider.of(context);
+  final store = StoreProvider.of(context);
+  final theme = Theme.of(context);
     final frequent = store.frequent;
     final folders = store.folders;
     final pinned = store.bookmarks.where((b) => b.isPinned).toList();
@@ -1293,7 +1352,19 @@ class _HomeScreenState extends State<HomeScreen> {
       _sortFolders();
     }
 
-    return SafeArea(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Stack(
+        children: [
+          Container(
+            height: MediaQuery.of(context).padding.top,
+            color: theme.colorScheme.primary,
+          ),
+          SafeArea(
       child: RefreshIndicator(
         onRefresh: () async {
           await Future.wait([
@@ -1312,9 +1383,13 @@ class _HomeScreenState extends State<HomeScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
           SliverAppBar(
+            backgroundColor: theme.colorScheme.primary,
             floating: true, snap: true,
-            title: const Text('ホーム'),
+            title: const Text('ホーム', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             leading: IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenDrawer),
+          ),
+          const SliverToBoxAdapter(
+            child: AdBanner(),
           ),
           if (pinned.isNotEmpty)
             SliverToBoxAdapter(
@@ -1427,7 +1502,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ), // CustomScrollView
     ), // RefreshIndicator
-  ); // SafeArea
+          ), // SafeArea
+        ],
+      ),
+    ); // AnnotatedRegion
 }
 }
 
@@ -1545,7 +1623,20 @@ class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
   @override
   Widget build(BuildContext context) {
     final store = StoreProvider.of(context);
-    return SafeArea(
+    final theme = Theme.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Stack(
+        children: [
+          Container(
+            height: MediaQuery.of(context).padding.top,
+            color: theme.colorScheme.primary,
+          ),
+          SafeArea(
       child: RefreshIndicator(
         onRefresh: () async {
           await store.fetchBookmarks();
@@ -1554,11 +1645,12 @@ class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverAppBar(
+              backgroundColor: theme.colorScheme.primary,
               floating: true,
               snap: true,
               title: selectionMode
-                  ? Text('${selectedIds.length}件選択中')
-                  : const Text('ブックマーク一覧'),
+                  ? Text('${selectedIds.length}件選択中', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+                  : const Text('ブックマーク一覧', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               leading: selectionMode
                   ? IconButton(
                       icon: const Icon(Icons.close),
@@ -1568,6 +1660,9 @@ class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
                   : null,
               actions: [
               ],
+            ),
+            const SliverToBoxAdapter(
+              child: AdBanner(),
             ),
             SliverToBoxAdapter(
               child: Column(
@@ -1689,6 +1784,9 @@ class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
           ],
         ),
       ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1749,40 +1847,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _analyzeTagStructure(BuildContext context) async {
-    // リワード広告を表示
-    final shouldProceed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('広告視聴'),
-        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('視聴する'),
-          ),
-        ],
-      ),
-    );
+    // リワード広告チェック（デバッグ用フラグで制御）
+    if (requireRewardedAdForAI) {
+      final shouldProceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('広告視聴'),
+          content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('視聴する'),
+            ),
+          ],
+        ),
+      );
 
-    if (shouldProceed != true) return;
+      if (shouldProceed != true) return;
 
-    // 広告を表示して報酬獲得を待つ
-    final adCompleted = await RewardedAdManager.showAd();
+      // 広告を表示して報酬獲得を待つ
+      final adCompleted = await RewardedAdManager.showAd();
 
-    if (!adCompleted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('広告を最後まで視聴する必要があります'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      if (!adCompleted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('広告を最後まで視聴する必要があります'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
 
     final store = StoreProvider.of(context);
@@ -1838,40 +1938,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _bulkAssignTags(BuildContext context) async {
-    // リワード広告を表示
-    final shouldProceed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('広告視聴'),
-        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('視聴する'),
-          ),
-        ],
-      ),
-    );
+    // リワード広告チェック（デバッグ用フラグで制御）
+    if (requireRewardedAdForAI) {
+      final shouldProceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('広告視聴'),
+          content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('視聴する'),
+            ),
+          ],
+        ),
+      );
 
-    if (shouldProceed != true) return;
+      if (shouldProceed != true) return;
 
-    // 広告を表示して報酬獲得を待つ
-    final adCompleted = await RewardedAdManager.showAd();
+      // 広告を表示して報酬獲得を待つ
+      final adCompleted = await RewardedAdManager.showAd();
 
-    if (!adCompleted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('広告を最後まで視聴する必要があります'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      if (!adCompleted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('広告を最後まで視聴する必要があります'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
 
     final store = StoreProvider.of(context);
@@ -1892,7 +1994,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
 
       // APIリクエスト
       final response = await http.post(
-        Uri.parse('http://localhost:8000/bulk-assign-tags'),
+        Uri.parse('$apiBaseUrl/bulk-assign-tags'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'bookmarks': bookmarksData,
@@ -1942,40 +2044,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _bulkAssignFolders(BuildContext context) async {
-    // リワード広告を表示
-    final shouldProceed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('広告視聴'),
-        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('視聴する'),
-          ),
-        ],
-      ),
-    );
+    // リワード広告チェック（デバッグ用フラグで制御）
+    if (requireRewardedAdForAI) {
+      final shouldProceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('広告視聴'),
+          content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('視聴する'),
+            ),
+          ],
+        ),
+      );
 
-    if (shouldProceed != true) return;
+      if (shouldProceed != true) return;
 
-    // 広告を表示して報酬獲得を待つ
-    final adCompleted = await RewardedAdManager.showAd();
+      // 広告を表示して報酬獲得を待つ
+      final adCompleted = await RewardedAdManager.showAd();
 
-    if (!adCompleted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('広告を最後まで視聴する必要があります'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      if (!adCompleted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('広告を最後まで視聴する必要があります'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
 
     final store = StoreProvider.of(context);
@@ -2036,7 +2140,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
 
       // APIリクエスト
       final response = await http.post(
-        Uri.parse('http://localhost:8000/bulk-assign-folders'),
+        Uri.parse('$apiBaseUrl/bulk-assign-folders'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'bookmarks': bookmarksData,
@@ -2178,40 +2282,42 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
   }
 
   Future<void> _analyzeFolderStructure(BuildContext context) async {
-    // リワード広告を表示
-    final shouldProceed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('広告視聴'),
-        content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('視聴する'),
-          ),
-        ],
-      ),
-    );
+    // リワード広告チェック（デバッグ用フラグで制御）
+    if (requireRewardedAdForAI) {
+      final shouldProceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('広告視聴'),
+          content: const Text('AI機能を使用するには、広告を視聴する必要があります。広告を視聴しますか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('視聴する'),
+            ),
+          ],
+        ),
+      );
 
-    if (shouldProceed != true) return;
+      if (shouldProceed != true) return;
 
-    // 広告を表示して報酬獲得を待つ
-    final adCompleted = await RewardedAdManager.showAd();
+      // 広告を表示して報酬獲得を待つ
+      final adCompleted = await RewardedAdManager.showAd();
 
-    if (!adCompleted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('広告を最後まで視聴する必要があります'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      if (!adCompleted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('広告を最後まで視聴する必要があります'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
 
     final store = StoreProvider.of(context);
@@ -2237,7 +2343,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
 
       // APIリクエスト
       final response = await http.post(
-        Uri.parse('http://localhost:8000/analyze-folder-structure'),
+        Uri.parse('$apiBaseUrl/analyze-folder-structure'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'bookmarks': bookmarksData,
@@ -2299,14 +2405,22 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final theme = Theme.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Scaffold(
       appBar: AppBar(
+        backgroundColor: theme.colorScheme.primary,
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: _isAnyProcessing ? null : () => widget.scaffoldKey.currentState?.openDrawer(),
           tooltip: 'メニュー',
         ),
-        title: const Text('AIツール'),
+        title: const Text('AIツール', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: Stack(
         children: [
@@ -2318,6 +2432,44 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  const AdBanner(),
+                  const SizedBox(height: 16),
+                  // 注意書き
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'AI機能について',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '• 大量のブックマークを効率的に整理・管理するための機能です\n'
+                          '• 各機能の利用には動画広告の視聴が必要です',
+                          style: TextStyle(fontSize: 12, height: 1.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.auto_awesome, size: 32),
@@ -2507,6 +2659,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
             ),
         ],
       ),
+    ),
     );
   }
 }
@@ -2515,7 +2668,23 @@ class TagsScreen extends StatelessWidget { const TagsScreen({super.key});
   @override
   Widget build(BuildContext context) {
     final store = StoreProvider.of(context);
-    return SafeArea(child: _TagsScreenBody(store: store));
+    final theme = Theme.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Stack(
+        children: [
+          Container(
+            height: MediaQuery.of(context).padding.top,
+            color: theme.colorScheme.primary,
+          ),
+          SafeArea(child: _TagsScreenBody(store: store)),
+        ],
+      ),
+    );
   }
 }
 
@@ -2597,13 +2766,19 @@ class _TagsScreenBodyState extends State<_TagsScreenBody> {
         CustomScrollView(
           slivers: [
             SliverAppBar(
+              backgroundColor: Theme.of(context).colorScheme.primary,
               floating: true,
               snap: true,
-              title: _selectionMode ? Text('${_selectedIds.length}件選択中') : const Text('タグ一覧'),
+              title: _selectionMode
+                  ? Text('${_selectedIds.length}件選択中', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+                  : const Text('タグ一覧', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               leading: _selectionMode
                   ? IconButton(icon: const Icon(Icons.close), onPressed: _clearSelection, tooltip: '選択解除')
                   : null,
               actions: [],
+            ),
+            const SliverToBoxAdapter(
+              child: AdBanner(),
             ),
             SliverToBoxAdapter(
               child: Column(
@@ -2742,9 +2917,17 @@ class FolderScreen extends StatelessWidget {
     final subfolders = currentFolder.children;
     final breadcrumbPath = buildBreadcrumb(currentFolder);
 
-    return Scaffold(
+  final theme = Theme.of(context);
+  return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Scaffold(
       appBar: AppBar(
-        title: Text(currentFolder.name),
+        backgroundColor: theme.colorScheme.primary,
+        title: Text(currentFolder.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.create_new_folder_outlined),
@@ -2912,6 +3095,7 @@ class FolderScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('追加'),
       ),
+    ),
     );
   }
 }
@@ -2919,8 +3103,14 @@ class FolderScreen extends StatelessWidget {
 class DetailScreen extends StatelessWidget { final BookmarkModel bm; const DetailScreen({super.key, required this.bm});
   @override Widget build(BuildContext context) {
     final theme = Theme.of(context); final store = StoreProvider.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(bm.title)),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Scaffold(
+  appBar: AppBar(title: Text(bm.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), backgroundColor: theme.colorScheme.primary),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2935,6 +3125,7 @@ class DetailScreen extends StatelessWidget { final BookmarkModel bm; const Detai
           ])
         ]),
       ),
+    ),
     );
   }
 }
@@ -3287,8 +3478,15 @@ class TutorialScreen extends StatelessWidget {
   
   @override 
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('使い方')),
+    final theme = Theme.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Scaffold(
+  appBar: AppBar(title: const Text('使い方', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), backgroundColor: theme.colorScheme.primary),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: const [
@@ -3426,6 +3624,7 @@ class TutorialScreen extends StatelessWidget {
           SizedBox(height: 24),
         ],
       ),
+    ),
     );
   }
 }
@@ -3465,15 +3664,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('各種設定')),
-        body: const Center(child: CircularProgressIndicator()),
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle(
+          statusBarColor: theme.colorScheme.primary,
+          statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+          statusBarBrightness: theme.brightness,
+        ),
+        child: Scaffold(
+          appBar: AppBar(title: const Text('各種設定'), backgroundColor: theme.colorScheme.primary),
+          body: const Center(child: CircularProgressIndicator()),
+        ),
       );
     }
     
-    return Scaffold(
-      appBar: AppBar(title: const Text('各種設定')),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Scaffold(
+  appBar: AppBar(title: const Text('各種設定', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), backgroundColor: theme.colorScheme.primary),
       body: ListView(
         children: [
           // ブラウザ設定（コメントアウト）
@@ -3528,6 +3741,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
         ],
       ),
+    ),
     );
   }
   
@@ -3686,7 +3900,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class ReportScreen extends StatelessWidget { const ReportScreen({super.key});
   @override Widget build(BuildContext context) {
     final controller = TextEditingController();
-    return Scaffold(appBar: AppBar(title: const Text('不具合報告/改善依頼')),
+    final theme = Theme.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+  child: Scaffold(appBar: AppBar(title: const Text('不具合報告/改善依頼', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), backgroundColor: theme.colorScheme.primary),
       body: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
         TextField(controller: controller, minLines: 6, maxLines: 12, decoration: const InputDecoration(labelText: '内容を入力', border: OutlineInputBorder(), hintText: '再現手順・期待する挙動 など…')),
         const SizedBox(height: 12),
@@ -3699,7 +3920,7 @@ class ReportScreen extends StatelessWidget { const ReportScreen({super.key});
           },
         ))
       ])),
-    );
+    ));
   }
 }
 
@@ -3708,8 +3929,15 @@ class PrivacyScreen extends StatelessWidget {
   
   @override 
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('プライバシーポリシー')),
+    final theme = Theme.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.primary,
+        statusBarIconBrightness: theme.brightness == Brightness.light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: theme.brightness,
+      ),
+      child: Scaffold(
+  appBar: AppBar(title: const Text('プライバシーポリシー', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), backgroundColor: theme.colorScheme.primary),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: const [
@@ -3854,6 +4082,7 @@ class PrivacyScreen extends StatelessWidget {
           SizedBox(height: 32),
         ],
       ),
+    ),
     );
   }
 }
@@ -4579,7 +4808,7 @@ void _mockPurchase(BuildContext context, {required String title}) {
     context: context,
     builder: (c) => AlertDialog(
   title: Text(title),
-      content: const Text('課金処理は未実装です。開発時は StoreKit / 購入検証 を実装してください。'),
+      content: const Text('近日中に実装予定。今しばらくお待ちください'),
       actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
     ),
   );

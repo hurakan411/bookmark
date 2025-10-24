@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import '../main.dart'; // apiBaseUrlをインポート
 
 class TagAnalysisService {
-  static const String baseUrl = 'http://localhost:8000';
-
   /// 全ブックマークから最適なタグ構成を分析・提案
   static Future<TagStructureAnalysis> analyzeTagStructure({
     required List<Map<String, dynamic>> bookmarks,
@@ -12,7 +11,7 @@ class TagAnalysisService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/analyze-tag-structure'),
+        Uri.parse('$apiBaseUrl/analyze-tag-structure'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'bookmarks': bookmarks,
@@ -24,8 +23,12 @@ class TagAnalysisService {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         return TagStructureAnalysis.fromJson(data);
       } else {
-        final error = jsonDecode(utf8.decode(response.bodyBytes));
-        throw Exception(error['detail'] ?? 'タグ構成分析に失敗しました');
+        debugPrint('API Error: ${response.statusCode}');
+        debugPrint('Response body: ${response.body}');
+        final error = response.statusCode == 404 
+            ? 'エンドポイントが見つかりません。バックエンドのデプロイを確認してください。'
+            : jsonDecode(utf8.decode(response.bodyBytes))['detail'] ?? 'タグ構成分析に失敗しました';
+        throw Exception(error);
       }
     } catch (e) {
       debugPrint('Tag analysis error: $e');

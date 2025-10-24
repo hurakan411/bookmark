@@ -16,7 +16,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "02E217FC2EA860A600228CC7"
+               BlueprintIdentifier = "0218C60F2EA8FC9400FA9F5B"
                BuildableName = "ControlWidgetExtension.appex"
                BlueprintName = "ControlWidgetExtension"
                ReferencedContainer = "container:Runner.xcodeproj">

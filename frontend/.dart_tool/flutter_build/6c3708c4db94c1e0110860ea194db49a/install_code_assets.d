@@ -1,0 +1,1 @@
+ /Users/hashinokuchishougo/bookmark/frontend/.dart_tool/flutter_build/6c3708c4db94c1e0110860ea194db49a/native_assets.json: 

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -106,21 +106,21 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		0218C6252EA8FC9600FA9F5B /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		0218C6252EA8FC9600FA9F5B /* Exceptions for "ControlWidget" folder in "ControlWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 0218C60F2EA8FC9400FA9F5B /* ControlWidgetExtension */;
 		};
-		0218C6282EA8FCF900FA9F5B /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		0218C6282EA8FCF900FA9F5B /* Exceptions for "ControlWidget" folder in "Runner" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				ControlWidgetControl.swift,
 			);
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 		};
-		02F4B2E82E9F89C2004A3A96 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		02F4B2E82E9F89C2004A3A96 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -130,8 +130,31 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		0218C6152EA8FC9400FA9F5B /* ControlWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (0218C6282EA8FCF900FA9F5B /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 0218C6252EA8FC9600FA9F5B /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ControlWidget; sourceTree = "<group>"; };
-		02F4B2DC2E9F89C2004A3A96 /* ShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (02F4B2E82E9F89C2004A3A96 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ShareExtension; sourceTree = "<group>"; };
+		0218C6152EA8FC9400FA9F5B /* ControlWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0218C6282EA8FCF900FA9F5B /* Exceptions for "ControlWidget" folder in "Runner" target */,
+				0218C6252EA8FC9600FA9F5B /* Exceptions for "ControlWidget" folder in "ControlWidgetExtension" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = ControlWidget;
+			sourceTree = "<group>";
+		};
+		02F4B2DC2E9F89C2004A3A96 /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				02F4B2E82E9F89C2004A3A96 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -283,8 +306,6 @@
 				0218C6152EA8FC9400FA9F5B /* ControlWidget */,
 			);
 			name = ControlWidgetExtension;
-			packageProductDependencies = (
-			);
 			productName = ControlWidgetExtension;
 			productReference = 0218C6102EA8FC9400FA9F5B /* ControlWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -467,13 +488,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
