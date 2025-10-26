@@ -46,7 +46,7 @@ enum ApiEnvironment {
 }
 
 // 現在の環境設定（ここを変更するだけで切り替え可能）
-const ApiEnvironment currentApiEnvironment = ApiEnvironment.render;
+const ApiEnvironment currentApiEnvironment = ApiEnvironment.local;
 
 // 環境ごとのベースURL
 const Map<ApiEnvironment, String> apiBaseUrls = {
@@ -2367,6 +2367,24 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
               }
               final allFlatAtApply = _flattenApply(store.folders);
 
+              // デバッグ: 最初の3件の情報を出力
+              int debugCount = 0;
+              for (var entry in assignments.entries) {
+                if (debugCount < 3) {
+                  print('📋 割り当て${debugCount + 1}: bookmarkId=${entry.key}, folderPath=${entry.value}');
+                  debugCount++;
+                }
+              }
+              
+              // デバッグ: 最初の3件のブックマークIDを出力
+              debugCount = 0;
+              for (var bm in store.bookmarks) {
+                if (debugCount < 3) {
+                  print('📋 ブックマーク${debugCount + 1}: id=${bm.id}, title=${bm.title}');
+                  debugCount++;
+                }
+              }
+              
               for (var entry in assignments.entries) {
                 final bookmarkId = entry.key;
                 final folderPath = entry.value; // 階層パス（例: 「プログラミング / Python」）
@@ -2377,6 +2395,8 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
                       .replaceAll('[', '')
                       .replaceAll(']', '')
                       .replaceAll('#', '');
+                  
+                  print('🔍 探索中: bookmarkId=$bookmarkId → 正規化後=$normalizedBookmarkId');
 
                   // ブックマークを取得
                   final bookmark = store.bookmarks.firstWhere(
@@ -2386,29 +2406,44 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
                           .replaceAll('[', '')
                           .replaceAll(']', '')
                           .replaceAll('#', '');
+                      
+                      // 最初の3件は詳細ログ
+                      if (successCount + failCount < 3) {
+                        print('  🔎 比較: bmId=${bm.id} → 正規化後=$normalizedBmId vs $normalizedBookmarkId → ${normalizedBmId == normalizedBookmarkId}');
+                      }
+                      
                       return normalizedBmId == normalizedBookmarkId;
                     },
                   );
+
+                  print('✅ ブックマーク発見: ${bookmark.title}');
 
                   // フォルダを階層パスで検索（全フォルダから）
                   FolderModel folder = allFlatAtApply.firstWhere(
                     (f) => f.getPath(allFlatAtApply) == folderPath,
                     orElse: () {
+                      print('⚠️ フォルダパス "$folderPath" が見つからない。名前で検索...');
                       // 見つからない場合は名前だけで検索（後方互換性）
                       return allFlatAtApply.firstWhere(
                         (f) => f.name == folderPath,
-                        orElse: () => allFlatAtApply.first,
+                        orElse: () {
+                          print('⚠️ フォルダ名 "$folderPath" も見つからない。最初のフォルダを使用');
+                          return allFlatAtApply.first;
+                        },
                       );
                     },
                   );
+
+                  print('✅ フォルダ発見: ${folder.name} (path=${folder.getPath(allFlatAtApply)})');
 
                   // フォルダを更新
                   bookmark.folderId = folder.id;
                   await store.updateBookmark(bookmark);
 
                   successCount++;
-                } catch (e) {
-                  print('フォルダ割り当てエラー (bookmarkId=$bookmarkId): $e');
+                } catch (e, stackTrace) {
+                  print('❌ フォルダ割り当てエラー (bookmarkId=$bookmarkId): $e');
+                  print('スタックトレース: $stackTrace');
                   failCount++;
                 }
               }
