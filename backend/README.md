@@ -27,7 +27,21 @@ cp .env.example .env
 `.env` ファイルを編集：
 ```
 OPENAI_API_KEY=sk-your-actual-api-key-here
+
+# Reasoning Effort Settings (low, medium, high)
+REASONING_EFFORT_SUGGEST_TAGS=low
+REASONING_EFFORT_ANALYZE_TAG_STRUCTURE=low
+REASONING_EFFORT_BULK_ASSIGN_TAGS=low
+REASONING_EFFORT_ANALYZE_FOLDER_STRUCTURE=low
+REASONING_EFFORT_BULK_ASSIGN_FOLDERS=low
 ```
+
+**Reasoning Effortの設定値：**
+- `low`: 高速・低コスト（デフォルト推奨）
+- `medium`: バランス型
+- `high`: 高精度・高コスト
+
+各APIエンドポイントごとに推論レベルを個別に調整できます。
 
 ### 3. サーバーの起動
 

@@ -17,6 +17,13 @@ app = FastAPI(title="Bookmark Tag Suggestion API")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tag_suggestion_api")
 
+# reasoning_effortの環境変数（デフォルト値: "low"）
+REASONING_EFFORT_SUGGEST_TAGS = os.getenv("REASONING_EFFORT_SUGGEST_TAGS", "low")
+REASONING_EFFORT_ANALYZE_TAG_STRUCTURE = os.getenv("REASONING_EFFORT_ANALYZE_TAG_STRUCTURE", "low")
+REASONING_EFFORT_BULK_ASSIGN_TAGS = os.getenv("REASONING_EFFORT_BULK_ASSIGN_TAGS", "low")
+REASONING_EFFORT_ANALYZE_FOLDER_STRUCTURE = os.getenv("REASONING_EFFORT_ANALYZE_FOLDER_STRUCTURE", "low")
+REASONING_EFFORT_BULK_ASSIGN_FOLDERS = os.getenv("REASONING_EFFORT_BULK_ASSIGN_FOLDERS", "low")
+
 # CORS設定（Flutterアプリからのアクセスを許可）
 app.add_middleware(
     CORSMiddleware,
@@ -181,7 +188,7 @@ URL: {request.url}
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=2000,
-            resoning_effort="low",  # コスト削減のため低めに設定
+            reasoning_effort=REASONING_EFFORT_SUGGEST_TAGS,
         )
 
         # レスポンスからタグを抽出
@@ -348,7 +355,7 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
-            reasoning_effort="low",  # コスト削減のため低めに設定
+            reasoning_effort=REASONING_EFFORT_ANALYZE_TAG_STRUCTURE,
             response_format={"type": "json_object"}
         )
 
@@ -489,7 +496,7 @@ URL: {url}
                         }
                     ],
                     max_completion_tokens=2000,
-                    reasoning_effort="low",  # コスト削減のため低めに設定
+                    reasoning_effort=REASONING_EFFORT_BULK_ASSIGN_TAGS,
                 )
 
                 # レスポンスからタグを抽出
@@ -730,7 +737,7 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
                 }
             ],
             max_completion_tokens=10000,
-            reasoning_effort="low",  # コスト削減のため低めに設定
+            reasoning_effort=REASONING_EFFORT_ANALYZE_FOLDER_STRUCTURE,
             response_format={"type": "json_object"}
         )
 
@@ -875,10 +882,10 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
 1. 各ブックマークの内容を詳しく分析してください
 2. 利用可能なフォルダリストから、**最も深い階層で最も具体的なフォルダ**を選んでください
 3. ブックマークの**主要なテーマ・カテゴリ**に基づいて判断してください
-4. **【絶対禁止】「未分類」は絶対に選択しないでください**
+4. **【超重要】「未分類」は極力避けてください**
    - 必ず利用可能なフォルダの中から最も近い・関連するものを選んでください
    - 完全一致でなくても、少しでも関連性があればそのフォルダに割り当ててください
-   - どんなブックマークでも、必ず何らかのフォルダに分類してください
+   - どうしても全く関連性がない場合のみ「未分類」を選んでください（最終手段）
 5. **フォルダ名は利用可能なフォルダリストから完全一致で選ぶこと**（階層構造も含めて）
 6. **全てのブックマークに対して提案してください**（現在のフォルダと同じでも構いません）
 7. 以下のJSON形式で回答してください（他の説明は不要）：
@@ -897,7 +904,7 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
 - **全てのブックマークに対して提案すること**
 - **suggested_folderは階層構造を含む完全なパスで指定**（例: 「プログラミング / Python」）
 - suggested_folderは必ず利用可能なフォルダリストから完全一致で選ぶこと
-- **【絶対禁止】「未分類」は絶対に使用しないこと**。必ず利用可能なフォルダから選ぶこと
+- **【超重要】「未分類」は極力避けること**。少しでも関連性があればそのフォルダを選ぶこと
 - **第2階層、第3階層のフォルダを積極的に使用すること**（より詳細な分類）
 - reasoningは簡潔に（例: 「Python学習コンテンツ」「Webデザイン参考」）
 - 日本語で回答してください"""
@@ -910,7 +917,7 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
             messages=[
                 {
                     "role": "system",
-                    "content": "あなたはブックマーク整理の専門家です。各ブックマークの内容を分析し、最も適切なフォルダに分類してください。階層の深いフォルダ（第2階層、第3階層）を積極的に使用して、より詳細で整理された分類を行ってください。【絶対禁止】「未分類」は絶対に使用しないでください。必ず利用可能なフォルダの中から最も関連性の高いものを選んでください。どんなブックマークでも必ず何らかのフォルダに分類してください。必ずJSON形式で回答してください。"
+                    "content": "あなたはブックマーク整理の専門家です。各ブックマークの内容を分析し、最も適切なフォルダに分類してください。階層の深いフォルダ（第2階層、第3階層）を積極的に使用して、より詳細で整理された分類を行ってください。【超重要】「未分類」は極力避け、少しでも関連性があればそのフォルダに割り当ててください。どうしても全く関連性がない場合のみ「未分類」を選んでください。必ずJSON形式で回答してください。"
                 },
                 {
                     "role": "user",
@@ -919,7 +926,7 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
-            reasoning_effort="low",  # コスト削減のため低めに設定
+            reasoning_effort=REASONING_EFFORT_BULK_ASSIGN_FOLDERS,
             response_format={"type": "json_object"}
         )
 
