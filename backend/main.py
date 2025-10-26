@@ -348,6 +348,7 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
+            reasoning_effort="low",  # コスト削減のため低めに設定
             response_format={"type": "json_object"}
         )
 
@@ -487,7 +488,8 @@ URL: {url}
                             "content": prompt
                         }
                     ],
-                    max_completion_tokens=2000
+                    max_completion_tokens=2000,
+                    reasoning_effort="low",  # コスト削減のため低めに設定
                 )
 
                 # レスポンスからタグを抽出
@@ -729,6 +731,7 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
+            reasoning_effort="low",  # コスト削減のため低めに設定
             response_format={"type": "json_object"}
         )
 
@@ -913,6 +916,7 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
             max_completion_tokens=10000,
+            reasoning_effort="low",  # コスト削減のため低めに設定
             response_format={"type": "json_object"}
         )
 
