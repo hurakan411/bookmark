@@ -2372,9 +2372,22 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
                 final folderPath = entry.value; // 階層パス（例: 「プログラミング / Python」）
 
                 try {
+                  // bookmarkIdを正規化（角括弧と#記号を除去）
+                  String normalizedBookmarkId = bookmarkId.toString()
+                      .replaceAll('[', '')
+                      .replaceAll(']', '')
+                      .replaceAll('#', '');
+
                   // ブックマークを取得
                   final bookmark = store.bookmarks.firstWhere(
-                    (bm) => bm.id == bookmarkId,
+                    (bm) {
+                      // bm.idを正規化
+                      String normalizedBmId = bm.id.toString()
+                          .replaceAll('[', '')
+                          .replaceAll(']', '')
+                          .replaceAll('#', '');
+                      return normalizedBmId == normalizedBookmarkId;
+                    },
                   );
 
                   // フォルダを階層パスで検索（全フォルダから）
@@ -2395,7 +2408,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
 
                   successCount++;
                 } catch (e) {
-                  print('フォルダ割り当てエラー: $e');
+                  print('フォルダ割り当てエラー (bookmarkId=$bookmarkId): $e');
                   failCount++;
                 }
               }
