@@ -29,7 +29,6 @@ import 'utils_title_fetcher.dart';
 
 import '_accordion_folder_selector.dart';
 import 'services/thumbnail_service.dart';
-import 'services/tag_suggestion_service.dart';
 import 'services/tag_analysis_service.dart';
 import 'services/share_extension_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -4336,100 +4335,6 @@ class _AddBookmarkSheetState extends State<AddBookmarkSheet> {
   
   @override void dispose() { _title.dispose(); _url.dispose(); _memo.dispose(); _newTagController.dispose(); super.dispose(); }
   
-  /// AIを使ってタグを自動提案
-  Future<void> _suggestTagsWithAI(BuildContext context) async {
-    final store = StoreProvider.of(context);
-    
-    // 入力チェック
-    if (_title.text.trim().isEmpty && _url.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('タイトルまたはURLを入力してください')),
-      );
-      return;
-    }
-    
-    // 既存タグがない場合
-    if (store.tags.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('既存のタグがありません。先にタグを作成してください。')),
-      );
-      return;
-    }
-    
-    // ローディング表示
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('AIがタグを分析中...'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    
-    try {
-      // API呼び出し
-      final suggestedTagNames = await TagSuggestionService.suggestTags(
-        title: _title.text.trim(),
-        url: _url.text.trim(),
-        excerpt: _memo.text.trim(),
-        existingTags: store.tags.map((t) => t.name).toList(),
-      );
-      
-      // ローディングを閉じる
-      Navigator.of(context).pop();
-      
-      if (suggestedTagNames.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('適切なタグが見つかりませんでした')),
-        );
-        return;
-      }
-      
-      // タグ名からTagModelを検索して選択状態に追加
-      setState(() {
-        for (final tagName in suggestedTagNames) {
-          final tag = store.tags.firstWhere(
-            (t) => t.name == tagName,
-            orElse: () => TagModel(id: '', name: ''),
-          );
-          if (tag.id.isNotEmpty && !_selected.any((t) => t.id == tag.id)) {
-            _selected.add(tag);
-          }
-        }
-      });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${suggestedTagNames.length}個のタグを提案しました: ${suggestedTagNames.join(", ")}'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } catch (e) {
-      // ローディングを閉じる
-      Navigator.of(context).pop();
-      // デバッグ用にエラー内容をコンソール出力
-      print('[AIタグ提案エラー] $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('タグ提案に失敗しました: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    }
-  }
-  
   @override Widget build(BuildContext context) {
     final store = StoreProvider.of(context); 
     final bottom = MediaQuery.of(context).viewInsets.bottom;
@@ -4651,17 +4556,7 @@ class _AddBookmarkSheetState extends State<AddBookmarkSheet> {
                 onFolderSelected: (folderId) => setState(() => _folderId = folderId),
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  const Text('タグ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.auto_awesome, size: 18),
-                    label: const Text('AI自動提案'),
-                    onPressed: () => _suggestTagsWithAI(context),
-                  ),
-                ],
-              ),
+              const Text('タグ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               Wrap(spacing: 8, children: store.tags.map((t) { final selected = _selected.any((x) => x.id == t.id); return FilterChip(label: Text('#${t.name}'), selected: selected, onSelected: (v) { setState(() { if (v) { _selected.add(t); } else { _selected.removeWhere((x) => x.id == t.id); } }); }); }).toList()),
               Padding(
