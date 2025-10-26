@@ -47,7 +47,7 @@ enum ApiEnvironment {
 }
 
 // 現在の環境設定（ここを変更するだけで切り替え可能）
-const ApiEnvironment currentApiEnvironment = ApiEnvironment.render;
+const ApiEnvironment currentApiEnvironment = ApiEnvironment.local;
 
 // 環境ごとのベースURL
 const Map<ApiEnvironment, String> apiBaseUrls = {

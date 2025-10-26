@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import logging
+import time
 
 # 環境変数の読み込み
 load_dotenv()
@@ -116,6 +117,8 @@ async def suggest_tags(request: TagSuggestionRequest):
     """
     ブックマークの情報から既存のタグリストの中から適切なタグを自動提案する
     """
+    start_time = time.time()
+    
     try:
         # OpenAI API キーのチェック
         if not os.getenv("OPENAI_API_KEY"):
@@ -177,7 +180,8 @@ URL: {request.url}
                 }
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
-            max_completion_tokens=2000
+            max_completion_tokens=2000,
+            resoning_effort="low",  # コスト削減のため低めに設定
         )
 
         # レスポンスからタグを抽出
@@ -196,12 +200,24 @@ URL: {request.url}
             if tag in request.existing_tags
         ]
 
+        # 処理時間とトークン数をログ
+        elapsed_time = time.time() - start_time
+        usage = response.usage
+        logger.info(f"📊 [suggest-tags] 処理完了")
+        logger.info(f"  ⏱️  処理時間: {elapsed_time:.2f}秒")
+        logger.info(f"  🔢 入力トークン: {usage.prompt_tokens}")
+        logger.info(f"  🔢 出力トークン: {usage.completion_tokens}")
+        logger.info(f"  🔢 合計トークン: {usage.total_tokens}")
+        logger.info(f"  ✅ 提案タグ数: {len(valid_tags)}")
+
         return TagSuggestionResponse(
             suggested_tags=valid_tags,
             reasoning=f"AIが分析した結果、{len(valid_tags)}個のタグを提案しました。"
         )
 
     except Exception as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [suggest-tags] エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"タグAI自動提案エラー: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -227,6 +243,8 @@ async def analyze_tag_structure(request: OptimalTagStructureRequest):
     - 類似タグの統合提案
     - 使われていない/不適切なタグの削除提案
     """
+    start_time = time.time()
+    
     try:
         # OpenAI API キーのチェック
         if not os.getenv("OPENAI_API_KEY"):
@@ -349,6 +367,17 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
         
         result = json.loads(response_content)
 
+        # 処理時間とトークン数をログ
+        elapsed_time = time.time() - start_time
+        usage = response.usage
+        logger.info(f"📊 [analyze-tag-structure] 処理完了")
+        logger.info(f"  ⏱️  処理時間: {elapsed_time:.2f}秒")
+        logger.info(f"  🔢 入力トークン: {usage.prompt_tokens}")
+        logger.info(f"  🔢 出力トークン: {usage.completion_tokens}")
+        logger.info(f"  🔢 合計トークン: {usage.total_tokens}")
+        logger.info(f"  ✅ 提案タグ数: {len(result.get('suggested_tags', []))}")
+        logger.info(f"  🗑️  削除推奨数: {len(result.get('tags_to_remove', []))}")
+
         return OptimalTagStructureResponse(
             suggested_tags=result.get("suggested_tags", []),
             tags_to_remove=result.get("tags_to_remove", []),
@@ -356,12 +385,16 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
         )
 
     except json.JSONDecodeError as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [analyze-tag-structure] JSON解析エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"JSON解析エラー: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="AIからの応答をJSON形式で解析できませんでした"
         )
     except Exception as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [analyze-tag-structure] エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"タグ構成分析エラー: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -375,6 +408,11 @@ async def bulk_assign_tags(request: BulkTagAssignmentRequest):
     全ブックマークに対してAIが適切なタグを一括で提案する
     既存の/suggest-tagsエンドポイントの機能を活用
     """
+    start_time = time.time()
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_tokens_sum = 0
+    
     try:
         # OpenAI API キーのチェック
         if not os.getenv("OPENAI_API_KEY"):
@@ -455,6 +493,11 @@ URL: {url}
                 # レスポンスからタグを抽出
                 suggested_text = response.choices[0].message.content.strip()
                 
+                # トークン数を集計
+                total_prompt_tokens += response.usage.prompt_tokens
+                total_completion_tokens += response.usage.completion_tokens
+                total_tokens_sum += response.usage.total_tokens
+                
                 # カンマ区切りのタグを分割
                 suggested_tags = [
                     tag.strip() 
@@ -482,6 +525,15 @@ URL: {url}
                     reasoning=f"エラー: {str(e)}"
                 ))
 
+        # 処理時間とトークン数をログ
+        elapsed_time = time.time() - start_time
+        logger.info(f"📊 [bulk-assign-tags] 処理完了")
+        logger.info(f"  ⏱️  処理時間: {elapsed_time:.2f}秒")
+        logger.info(f"  🔢 入力トークン合計: {total_prompt_tokens}")
+        logger.info(f"  🔢 出力トークン合計: {total_completion_tokens}")
+        logger.info(f"  🔢 合計トークン: {total_tokens_sum}")
+        logger.info(f"  📝 処理ブックマーク数: {len(suggestions)}")
+
         return BulkTagAssignmentResponse(
             suggestions=suggestions,
             total_processed=len(suggestions),
@@ -489,6 +541,8 @@ URL: {url}
         )
 
     except Exception as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [bulk-assign-tags] エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"一括タグ割り当てエラー: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -504,6 +558,8 @@ async def analyze_folder_structure(request: OptimalFolderStructureRequest):
     - 類似フォルダの統合提案
     - 使われていない/不適切なフォルダの削除提案
     """
+    start_time = time.time()
+    
     logger.info("=== フォルダ構成分析API呼び出し ===")
     logger.info(f"ブックマーク数: {len(request.bookmarks)}")
     logger.info(f"現在のフォルダ数: {len(request.current_folders)}")
@@ -701,6 +757,17 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
         result = json.loads(response_content)
         logger.info(f"解析結果: 提案フォルダ数={len(result.get('suggested_folders', []))}, 削除推奨数={len(result.get('folders_to_remove', []))}")
 
+        # 処理時間とトークン数をログ
+        elapsed_time = time.time() - start_time
+        usage = response.usage
+        logger.info(f"📊 [analyze-folder-structure] 処理完了")
+        logger.info(f"  ⏱️  処理時間: {elapsed_time:.2f}秒")
+        logger.info(f"  🔢 入力トークン: {usage.prompt_tokens}")
+        logger.info(f"  🔢 出力トークン: {usage.completion_tokens}")
+        logger.info(f"  🔢 合計トークン: {usage.total_tokens}")
+        logger.info(f"  ✅ 提案フォルダ数: {len(result.get('suggested_folders', []))}")
+        logger.info(f"  🗑️  削除推奨数: {len(result.get('folders_to_remove', []))}")
+
         response_data = OptimalFolderStructureResponse(
             suggested_folders=result.get("suggested_folders", []),
             folders_to_remove=result.get("folders_to_remove", []),
@@ -711,6 +778,8 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
         return response_data
 
     except json.JSONDecodeError as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [analyze-folder-structure] JSON解析エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"JSON解析エラー: {e}", exc_info=True)
         logger.error(f"解析しようとした内容: {response_content if 'response_content' in locals() else 'N/A'}")
         raise HTTPException(
@@ -721,6 +790,8 @@ JSON形式で以下の構造で返してください。overall_reasoningは100�
         # HTTPExceptionはそのまま再送出
         raise
     except Exception as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [analyze-folder-structure] エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"フォルダ構成分析エラー: {e}", exc_info=True)
         logger.error(f"エラータイプ: {type(e).__name__}")
         raise HTTPException(
@@ -734,6 +805,8 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
     """
     全ブックマークに対してAIが適切なフォルダを一括で提案する
     """
+    start_time = time.time()
+    
     logger.info("=== フォルダ一括割り当てAPI呼び出し ===")
     logger.info(f"ブックマーク数: {len(request.bookmarks)}")
     logger.info(f"利用可能なフォルダ数: {len(request.available_folders)}")
@@ -870,6 +943,16 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
                 reasoning=assignment.get("reasoning", "")
             ))
 
+        # 処理時間とトークン数をログ
+        elapsed_time = time.time() - start_time
+        usage = response.usage
+        logger.info(f"📊 [bulk-assign-folders] 処理完了")
+        logger.info(f"  ⏱️  処理時間: {elapsed_time:.2f}秒")
+        logger.info(f"  🔢 入力トークン: {usage.prompt_tokens}")
+        logger.info(f"  🔢 出力トークン: {usage.completion_tokens}")
+        logger.info(f"  🔢 合計トークン: {usage.total_tokens}")
+        logger.info(f"  📝 処理ブックマーク数: {len(suggestions)}")
+
         return BulkFolderAssignmentResponse(
             suggestions=suggestions,
             total_processed=len(suggestions),
@@ -877,12 +960,16 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
         )
 
     except json.JSONDecodeError as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [bulk-assign-folders] JSON解析エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"JSON解析エラー: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="AIからの応答をJSON形式で解析できませんでした"
         )
     except Exception as e:
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [bulk-assign-folders] エラー (処理時間: {elapsed_time:.2f}秒)")
         logger.error(f"一括フォルダ割り当てエラー: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
