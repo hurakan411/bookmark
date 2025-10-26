@@ -2231,15 +2231,52 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
       final allSuggestions = result['suggestions'] as List;
       
       debugPrint('📊 AI一括フォルダ割り当て: 全提案数=${allSuggestions.length}');
+      debugPrint('📊 bookmarksData件数=${bookmarksData.length}');
+      
+      // bookmarksDataの最初の要素の構造を確認
+      if (bookmarksData.isNotEmpty) {
+        debugPrint('📋 bookmarksDataの最初の要素のキー: ${bookmarksData[0].keys.toList()}');
+        debugPrint('📋 最初の要素: ${bookmarksData[0]}');
+      }
       
       // 変化があったブックマークのみをフィルタリング
       final changedSuggestions = allSuggestions.where((suggestion) {
-        final bookmarkId = suggestion['bookmark_id'] as String;
+        final bookmarkId = suggestion['bookmark_id'];
         final suggestedFolder = suggestion['suggested_folder'] as String;
+        
+        // bookmarkIdを正規化 (角括弧と#記号を除去)
+        String normalizedBookmarkId = bookmarkId.toString()
+            .replaceAll('[', '')
+            .replaceAll(']', '')
+            .replaceAll('#', '');
+        
+        debugPrint('🔍 探索中: bookmarkId=$bookmarkId → 正規化後=$normalizedBookmarkId');
         
         // 該当するブックマークを検索
         try {
-          final bm = bookmarksData.firstWhere((b) => b['id'] == bookmarkId);
+          final bm = bookmarksData.firstWhere((b) {
+            final bmId = b['id'];
+            // idを正規化 (角括弧、#記号、Listの場合は最初の要素を取得)
+            String normalizedBmId;
+            if (bmId is List) {
+              final idList = bmId as List;
+              if (idList.isNotEmpty) {
+                normalizedBmId = idList[0].toString()
+                    .replaceAll('[', '')
+                    .replaceAll(']', '')
+                    .replaceAll('#', '');
+              } else {
+                normalizedBmId = '';
+              }
+            } else {
+              normalizedBmId = bmId?.toString()
+                  .replaceAll('[', '')
+                  .replaceAll(']', '')
+                  .replaceAll('#', '') ?? '';
+            }
+            
+            return normalizedBmId == normalizedBookmarkId;
+          });
           final currentFolder = bm['current_folder']?.toString() ?? '未分類';
           
           debugPrint('比較: ブックマーク=${bm['title']}, 現在=$currentFolder, 提案=$suggestedFolder');
@@ -2251,7 +2288,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
           }
           return isDifferent;
         } catch (e) {
-          debugPrint('エラー: $e');
+          debugPrint('❌ エラー: $e (bookmarkId=$bookmarkId)');
           return false;
         }
       }).toList();
@@ -2260,8 +2297,35 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
       
       // suggestions に bookmark_title と current_folder を追加
       final enrichedSuggestions = changedSuggestions.map((suggestion) {
-        final bookmarkId = suggestion['bookmark_id'] as String;
-        final bm = bookmarksData.firstWhere((b) => b['id'] == bookmarkId);
+        final bookmarkId = suggestion['bookmark_id'];
+        
+        // bookmarkIdを正規化
+        String normalizedBookmarkId = bookmarkId.toString()
+            .replaceAll('[', '')
+            .replaceAll(']', '')
+            .replaceAll('#', '');
+        
+        final bm = bookmarksData.firstWhere((b) {
+          final bmId = b['id'];
+          String normalizedBmId;
+          if (bmId is List) {
+            final idList = bmId as List;
+            if (idList.isNotEmpty) {
+              normalizedBmId = idList[0].toString()
+                  .replaceAll('[', '')
+                  .replaceAll(']', '')
+                  .replaceAll('#', '');
+            } else {
+              normalizedBmId = '';
+            }
+          } else {
+            normalizedBmId = bmId?.toString()
+                .replaceAll('[', '')
+                .replaceAll(']', '')
+                .replaceAll('#', '') ?? '';
+          }
+          return normalizedBmId == normalizedBookmarkId;
+        });
         
         return <String, dynamic>{
           ...Map<String, dynamic>.from(suggestion),
