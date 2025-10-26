@@ -927,12 +927,19 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
                 }
             ],
             # reasoning_effort="medium",  # Render.comの古いopenaiライブラリではサポートされていないためコメントアウト
-            max_completion_tokens=10000,
+            max_completion_tokens=15000,  # トークン数上限を増やして全件対応
             reasoning_effort=REASONING_EFFORT_BULK_ASSIGN_FOLDERS,
             response_format={"type": "json_object"}
         )
 
         logger.info("OpenAI APIからレスポンス受信")
+        logger.info(f"Finish reason: {response.choices[0].finish_reason}")
+        
+        # finish_reasonチェック
+        if response.choices[0].finish_reason == "length":
+            logger.warning("⚠️ トークン数制限により応答が途中で切れました")
+            logger.warning(f"処理ブックマーク数: {len(bookmarks_summary)}件")
+            logger.warning("ブックマーク数を減らして再試行することを推奨します")
         
         # レスポンスを解析
         import json
@@ -941,15 +948,58 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
         
         if not response_content or response_content.strip() == "":
             logger.error("OpenAI returned empty content")
+            logger.error(f"Finish reason: {response.choices[0].finish_reason}")
+            logger.error(f"Usage: {response.usage}")
             raise HTTPException(
                 status_code=500,
                 detail="AIからの応答が空でした。"
             )
         
-        result = json.loads(response_content)
-        assignments = result.get("assignments", [])
+        logger.info(f"レスポンス内容の長さ: {len(response_content)} 文字")
+        
+        try:
+            result = json.loads(response_content)
+            assignments = result.get("assignments", [])
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON解析エラー: {e}")
+            logger.error(f"レスポンス内容（最初の1000文字）: {response_content[:1000]}")
+            logger.error(f"レスポンス内容（最後の500文字）: {response_content[-500:]}")
+            
+            # JSON修復を試みる
+            try:
+                # 不完全なJSONの場合、最後の配列要素を補完
+                if response_content.strip().endswith('"'):
+                    # 最後のカンマやブラケットが欠けている可能性
+                    fixed_content = response_content.strip()
+                    if not fixed_content.endswith(']}'):
+                        # 配列の閉じ括弧を追加
+                        if not fixed_content.endswith(']'):
+                            fixed_content += ']'
+                        if not fixed_content.endswith('}'):
+                            fixed_content += '}'
+                    
+                    logger.info("JSON修復を試みます...")
+                    result = json.loads(fixed_content)
+                    assignments = result.get("assignments", [])
+                    logger.info(f"✅ JSON修復成功: {len(assignments)}件の割り当てを取得")
+                else:
+                    raise e
+            except Exception as repair_error:
+                logger.error(f"JSON修復失敗: {repair_error}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"AIからの応答をJSON形式で解析できませんでした: {str(e)}"
+                )
         
         logger.info(f"割り当て結果: {len(assignments)}件")
+        
+        if len(assignments) == 0:
+            logger.warning("⚠️ 割り当て結果が0件でした")
+            logger.warning(f"応答内容: {response_content[:500]}")
+        
+        if len(assignments) < len(bookmarks_summary):
+            logger.warning(f"⚠️ 一部のブックマークに対する割り当てが欠けています")
+            logger.warning(f"期待: {len(bookmarks_summary)}件、実際: {len(assignments)}件")
         
         # レスポンスを整形
         for assignment in assignments:
@@ -978,10 +1028,18 @@ async def bulk_assign_folders(request: BulkFolderAssignmentRequest):
     except json.JSONDecodeError as e:
         elapsed_time = time.time() - start_time
         logger.error(f"❌ [bulk-assign-folders] JSON解析エラー (処理時間: {elapsed_time:.2f}秒)")
-        logger.error(f"JSON解析エラー: {e}", exc_info=True)
+        logger.error(f"JSON解析エラー: {e}")
+        logger.error(f"エラー位置: line {e.lineno}, column {e.colno}")
+        logger.error(f"レスポンス全体の長さ: {len(response_content if 'response_content' in locals() else '')} 文字")
+        if 'response_content' in locals():
+            logger.error(f"レスポンス内容（最初の1000文字）: {response_content[:1000]}")
+            logger.error(f"レスポンス内容（最後の1000文字）: {response_content[-1000:]}")
+        if 'response' in locals():
+            logger.error(f"Finish reason: {response.choices[0].finish_reason}")
+            logger.error(f"Usage: {response.usage}")
         raise HTTPException(
             status_code=500,
-            detail="AIからの応答をJSON形式で解析できませんでした"
+            detail=f"AIからの応答をJSON形式で解析できませんでした。トークン制限により応答が不完全な可能性があります。ブックマーク数: {len(request.bookmarks)}件"
         )
     except Exception as e:
         elapsed_time = time.time() - start_time
