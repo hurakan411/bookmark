@@ -2230,6 +2230,8 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
       final result = json.decode(utf8.decode(response.bodyBytes));
       final allSuggestions = result['suggestions'] as List;
       
+      debugPrint('📊 AI一括フォルダ割り当て: 全提案数=${allSuggestions.length}');
+      
       // 変化があったブックマークのみをフィルタリング
       final changedSuggestions = allSuggestions.where((suggestion) {
         final bookmarkId = suggestion['bookmark_id'] as String;
@@ -2240,12 +2242,21 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
           final bm = bookmarksData.firstWhere((b) => b['id'] == bookmarkId);
           final currentFolder = bm['current_folder']?.toString() ?? '未分類';
           
+          debugPrint('比較: ブックマーク=${bm['title']}, 現在=$currentFolder, 提案=$suggestedFolder');
+          
           // 現在のフォルダと提案されたフォルダが異なる場合のみ含める
-          return currentFolder != suggestedFolder;
+          final isDifferent = currentFolder != suggestedFolder;
+          if (!isDifferent) {
+            debugPrint('  → 同じため除外');
+          }
+          return isDifferent;
         } catch (e) {
+          debugPrint('エラー: $e');
           return false;
         }
       }).toList();
+      
+      debugPrint('📊 変更あり提案数=${changedSuggestions.length}');
       
       // suggestions に bookmark_title と current_folder を追加
       final enrichedSuggestions = changedSuggestions.map((suggestion) {
