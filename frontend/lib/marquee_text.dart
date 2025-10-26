@@ -21,7 +21,7 @@ class MarqueeTextState extends State<MarqueeText> with SingleTickerProviderState
     _controller = ScrollController();
   _animController = AnimationController(vsync: this, duration: const Duration(seconds: 1));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(seconds: 2), _measureAndAnimate);
+      Future.delayed(const Duration(seconds: 5), _measureAndAnimate);
     });
   }
 
@@ -71,7 +71,7 @@ class MarqueeTextState extends State<MarqueeText> with SingleTickerProviderState
         }
       };
       _animController.addListener(_animListener!);
-      Future.delayed(const Duration(seconds: 1), startScroll);
+      startScroll(); // 測定後すぐにスクロール開始（既に10秒待機済み）
     }
   }
 
