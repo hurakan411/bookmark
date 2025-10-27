@@ -3485,7 +3485,7 @@ class BookmarkGridCard extends StatelessWidget {
                     width: double.infinity,
                     child: MarqueeText(
                       text: bm.title,
-                      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, fontSize: 12),
                     ),
                   ),
                 ),
