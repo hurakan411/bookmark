@@ -3836,6 +3836,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String _selectedBrowser = 'default'; // default, safari, chrome, edge
   bool _isLoading = true;
+  bool _isCleaningCache = false;
   
   @override
   void initState() {
@@ -3857,6 +3858,128 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _selectedBrowser = browser;
     });
+  }
+  
+  // すべてのキャッシュを削除
+  Future<void> _cleanupAllCache() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('すべてのキャッシュを削除'),
+        content: const Text(
+          '以下のデータを削除します：\n'
+          '• 未使用のサムネイル画像\n'
+          '• 一時ファイル\n'
+          '• Libraryキャッシュ\n\n'
+          '使用中のサムネイルやブックマークデータは削除されません。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed != true) return;
+    
+    setState(() => _isCleaningCache = true);
+    
+    int totalDeletedCount = 0;
+    int totalSize = 0;
+    
+    try {
+      final store = StoreProvider.of(context);
+      final docDir = await getApplicationDocumentsDirectory();
+      final tempDir = await getTemporaryDirectory();
+      final libraryDir = Directory(docDir.path.replaceAll('/Documents', '/Library'));
+      
+      // 使用中のサムネイルURLを取得
+      final usedPaths = store.bookmarks
+          .map((bm) => bm.thumbnailUrl)
+          .where((path) => path != null && path.isNotEmpty)
+          .toSet();
+      
+      // 1. 未使用サムネイルを削除
+      final docFiles = docDir.listSync(recursive: true);
+      for (final file in docFiles) {
+        if (file is File && (file.path.contains('thumb_') || file.path.contains('snapshot_'))) {
+          if (!usedPaths.contains(file.path)) {
+            try {
+              final size = await file.length();
+              totalSize += size;
+              await file.delete();
+              totalDeletedCount++;
+            } catch (e) {
+              debugPrint('ファイル削除エラー: $e');
+            }
+          }
+        }
+      }
+      
+      // 2. 一時ファイルを削除
+      final tempFiles = tempDir.listSync(recursive: true);
+      for (final file in tempFiles) {
+        if (file is File) {
+          try {
+            final size = await file.length();
+            totalSize += size;
+            await file.delete();
+            totalDeletedCount++;
+          } catch (e) {
+            debugPrint('一時ファイル削除エラー: $e');
+          }
+        }
+      }
+      
+      // 3. Libraryキャッシュを削除
+      if (await libraryDir.exists()) {
+        final cachesDir = Directory('${libraryDir.path}/Caches');
+        if (await cachesDir.exists()) {
+          final cacheFiles = cachesDir.listSync(recursive: true);
+          for (final file in cacheFiles) {
+            if (file is File) {
+              try {
+                final size = await file.length();
+                totalSize += size;
+                await file.delete();
+                totalDeletedCount++;
+              } catch (e) {
+                debugPrint('キャッシュファイル削除エラー: $e');
+              }
+            }
+          }
+        }
+      }
+      
+      if (!mounted) return;
+      
+      final sizeMB = (totalSize / (1024 * 1024)).toStringAsFixed(2);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${totalDeletedCount}件のファイルを削除しました（${sizeMB}MB）'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('クリーンアップエラー: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isCleaningCache = false);
+      }
+    }
   }
   
   @override
@@ -3884,8 +4007,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: Scaffold(
   appBar: AppBar(title: const Text('各種設定', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), backgroundColor: theme.colorScheme.primary),
-      body: ListView(
+      body: Stack(
         children: [
+          ListView(
+        children: [
+          // キャッシュ管理
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'キャッシュ管理',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cleaning_services, color: Colors.orange),
+            title: const Text('すべてのキャッシュを削除'),
+            subtitle: const Text('未使用サムネイル、一時ファイル、Libraryキャッシュを削除'),
+            onTap: _isCleaningCache ? null : _cleanupAllCache,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              'キャッシュを削除することで、ストレージ容量を節約できます。\nブックマークやフォルダなどのデータは削除されません。',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ),
+          const Divider(),
+          
           // ブラウザ設定（コメントアウト）
           // const Padding(
           //   padding: EdgeInsets.all(16),
@@ -3924,9 +4072,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.delete_outline, color: Colors.red),
             title: const Text('すべてのデータを削除', style: TextStyle(color: Colors.red)),
             subtitle: const Text('ブックマーク、フォルダ、タグ、サムネイル画像などをすべて削除'),
-            onTap: () {
-              _showDeleteAllDataDialog();
-            },
+            onTap: _isCleaningCache ? null : _showDeleteAllDataDialog,
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -3936,6 +4082,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 32),
+        ],
+      ),
+          
+          // ローディングオーバーレイ
+          if (_isCleaningCache)
+            Container(
+              color: Colors.black.withOpacity(0.5),
+              child: const Center(
+                child: Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('クリーンアップ中...'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     ),
