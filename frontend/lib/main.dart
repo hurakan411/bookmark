@@ -5079,16 +5079,18 @@ class _AddBookmarkSheetState extends State<AddBookmarkSheet> {
     final store = StoreProvider.of(context); 
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Padding(
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Padding(
         padding: EdgeInsets.only(bottom: bottom),
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [ Expanded(child: Text(widget.bm != null ? 'ブックマークを編集' : 'ブックマークを追加', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))), IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)) ]),
                 const SizedBox(height: 8),
                 Row(
@@ -5393,7 +5395,6 @@ class _AddBookmarkSheetState extends State<AddBookmarkSheet> {
           ),
         ),
       ),
-    ),
     );
   }
 }
