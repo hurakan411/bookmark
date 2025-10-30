@@ -3897,7 +3897,7 @@ class BookmarkListCard extends StatelessWidget {
                   else ...[
                     PopupMenuButton<String>(
                       tooltip: '編集・削除',
-                      icon: const Icon(Icons.more_vert, size: 20),
+                      icon: const Icon(Icons.edit_outlined, size: 20),
                       onSelected: (value) async {
                         if (value == 'edit') {
                           await showModalBottomSheet(
@@ -3937,9 +3937,17 @@ class BookmarkListCard extends StatelessWidget {
                           }
                         }
                       },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'edit', child: Text('編集')),
-                        const PopupMenuItem(value: 'delete', child: Text('削除')),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'edit',
+                          height: 48,
+                          child: Text('編集', style: TextStyle(fontSize: 14)),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          height: 48,
+                          child: Text('削除', style: TextStyle(fontSize: 14)),
+                        ),
                       ],
                     ),
                     IconButton(
@@ -4054,10 +4062,7 @@ class BookmarkGridCard extends StatelessWidget {
                       PopupMenuButton<String>(
                         tooltip: '編集・削除',
                         icon: Icon(Icons.edit_outlined, size: isCompactMode ? 16 : 20),
-                        padding: isCompactMode ? EdgeInsets.zero : const EdgeInsets.all(8.0),
-                        constraints: isCompactMode 
-                            ? const BoxConstraints.tightFor(width: 28, height: 28)
-                            : null,
+                        iconSize: isCompactMode ? 16 : 20,
                         onSelected: (value) async {
                           if (value == 'edit') {
                             await showModalBottomSheet(
@@ -4087,9 +4092,15 @@ class BookmarkGridCard extends StatelessWidget {
                             }
                           }
                         },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(value: 'edit', child: Text('編集')),
-                          const PopupMenuItem(value: 'delete', child: Text('削除')),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: 'edit',
+                            child: Text('編集'),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Text('削除'),
+                          ),
                         ],
                       ),
                       IconButton(
