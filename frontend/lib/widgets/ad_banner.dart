@@ -2,13 +2,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../main.dart' show showBannerAds;
+import '../services/purchase_manager.dart';
 
 /// AdMobバナー広告ウィジェット
 /// 
 /// 上部・下部に配置可能なバナー広告を表示します。
 /// テスト用広告IDが設定されているため、本番環境では適切な広告IDに変更してください。
 /// 
-/// デバッグ用フラグ `showBannerAds` が false の場合は、広告を表示しません。
+/// デバッグ用フラグ `showBannerAds` が false の場合、または広告削除を購入済みの場合は、広告を表示しません。
 class AdBanner extends StatefulWidget {
   const AdBanner({super.key});
 
@@ -29,8 +30,8 @@ class _AdBannerState extends State<AdBanner> {
   @override
   void initState() {
     super.initState();
-    // デバッグフラグがtrueの場合のみ広告を読み込む
-    if (showBannerAds) {
+    // デバッグフラグがtrueかつ広告削除未購入の場合のみ広告を読み込む
+    if (showBannerAds && !PurchaseManager().isPurchased) {
       _loadAd();
     }
   }
@@ -94,8 +95,8 @@ class _AdBannerState extends State<AdBanner> {
 
   @override
   Widget build(BuildContext context) {
-    // デバッグフラグがfalseの場合は何も表示しない
-    if (!showBannerAds) {
+    // デバッグフラグがfalseまたは広告削除購入済みの場合は何も表示しない
+    if (!showBannerAds || PurchaseManager().isPurchased) {
       return const SizedBox.shrink();
     }
     

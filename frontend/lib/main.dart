@@ -31,6 +31,7 @@ import '_accordion_folder_selector.dart';
 import 'services/thumbnail_service.dart';
 import 'services/tag_analysis_service.dart';
 import 'services/share_extension_service.dart';
+import 'services/purchase_manager.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'widgets/rewarded_ad_manager.dart';
@@ -60,6 +61,27 @@ String get apiBaseUrl => apiBaseUrls[currentApiEnvironment]!;
 // ====== デバッグ用: 広告表示フラグ ======
 const bool requireRewardedAdForAI = false; // falseで広告スキップ（デバッグ用）
 const bool showBannerAds = false; // falseでバナー広告非表示（デバッグ用）
+
+// ====== レスポンシブレイアウト用ヘルパー関数 ======
+/// 画面幅に応じて最適なグリッドのカラム数を返す
+int getResponsiveCrossAxisCount(double screenWidth) {
+  // iPad Pro 13インチ: 1024pt以上
+  // iPad Pro 11インチ / iPad Air: 768pt〜1024pt
+  // iPad mini: 744pt前後
+  // iPhone Pro Max: 430pt前後
+  // iPhone Pro: 393pt前後
+  // iPhone: 375pt前後
+  
+  if (screenWidth >= 1024) {
+    return 4; // iPad Pro 13インチ: 4列
+  } else if (screenWidth >= 768) {
+    return 3; // iPad Pro 11インチ / iPad Air: 3列
+  } else if (screenWidth >= 600) {
+    return 3; // iPad mini: 3列
+  } else {
+    return 2; // iPhone: 2列
+  }
+}
 
 // フォルダカードのアコーディオン展開/折りたたみアイコン付きタイル
 class _AccordionFolderTile extends StatefulWidget {
@@ -231,6 +253,9 @@ Future<void> main() async {
   
   // リワード広告を事前に読み込み
   RewardedAdManager.loadAd();
+  
+  // 課金マネージャーの初期化
+  await PurchaseManager().initialize();
   
   // App Tracking Transparency (ATT) のリクエスト (iOS のみ)
   if (Platform.isIOS) {
@@ -862,6 +887,121 @@ class _RootScreenState extends State<RootScreen> {
   }
 
   void _goTab(int i) => setState(() => idx = i);
+  
+  // 広告削除を購入
+  Future<void> _handlePurchaseRemoveAds() async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('購入処理中...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      
+      final success = await PurchaseManager().purchaseRemoveAds();
+      
+      if (!mounted) return;
+      Navigator.pop(context); // ローディングダイアログを閉じる
+      
+      if (success) {
+        setState(() {}); // UIを更新
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('購入ありがとうございます！広告が削除されました'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('購入がキャンセルされました'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // ローディングダイアログを閉じる
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('エラーが発生しました: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+  
+  // 購入を復元
+  Future<void> _handleRestorePurchases() async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('復元中...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      
+      await PurchaseManager().restorePurchases();
+      
+      if (!mounted) return;
+      Navigator.pop(context); // ローディングダイアログを閉じる
+      
+      setState(() {}); // UIを更新
+      
+      if (PurchaseManager().isPurchased) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('購入が復元されました！広告が削除されました'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('復元可能な購入が見つかりませんでした'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // ローディングダイアログを閉じる
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('エラーが発生しました: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -877,14 +1017,18 @@ class _RootScreenState extends State<RootScreen> {
       store: store,
       child: Scaffold(
         key: scaffoldKey,
-        drawer: AppDrawer(onSelect: (route) {
-          switch (route) {
-            case 'home': _goTab(0); break;
-            case 'all': _goTab(1); break;
-            case 'tags': _goTab(2); break;
-            case 'smart': _goTab(3); break;
-          }
-        }),
+        drawer: AppDrawer(
+          onSelect: (route) {
+            switch (route) {
+              case 'home': _goTab(0); break;
+              case 'all': _goTab(1); break;
+              case 'tags': _goTab(2); break;
+              case 'smart': _goTab(3); break;
+            }
+          },
+          onPurchaseRemoveAds: _handlePurchaseRemoveAds,
+          onRestorePurchases: _handleRestorePurchases,
+        ),
         body: IndexedStack(
           index: idx,
           children: [
@@ -963,7 +1107,15 @@ class _RootScreenState extends State<RootScreen> {
 // ===== Drawer (Flat) =====
 class AppDrawer extends StatelessWidget {
   final void Function(String route) onSelect;
-  const AppDrawer({super.key, required this.onSelect});
+  final VoidCallback? onPurchaseRemoveAds;
+  final VoidCallback? onRestorePurchases;
+  
+  const AppDrawer({
+    super.key,
+    required this.onSelect,
+    this.onPurchaseRemoveAds,
+    this.onRestorePurchases,
+  });
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -1050,23 +1202,32 @@ class AppDrawer extends StatelessWidget {
               // --- App課金（見出し→ボタン）
               _GroupTitle('App課金'),
               ListTile(
-                leading: const Icon(Icons.hide_image_outlined),
-                title: const Text('広告削除'),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('近日中に実装予定です。お待ちください')),
-                  );
-                },
+                leading: Icon(
+                  PurchaseManager().isPurchased ? Icons.check_circle : Icons.hide_image_outlined,
+                  color: PurchaseManager().isPurchased ? Colors.green : null,
+                ),
+                title: Text(
+                  PurchaseManager().isPurchased ? '広告削除済み' : '広告削除',
+                ),
+                subtitle: Text(
+                  PurchaseManager().isPurchased 
+                      ? 'すべての広告が削除されています'
+                      : '買い切り課金で広告を削除',
+                ),
+                onTap: PurchaseManager().isPurchased 
+                    ? null 
+                    : () {
+                        Navigator.pop(context);
+                        onPurchaseRemoveAds?.call();
+                      },
               ),
               ListTile(
                 leading: const Icon(Icons.restore_outlined),
                 title: const Text('購入記録を復元'),
+                subtitle: const Text('機種変更時に購入を復元'),
                 onTap: () {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('近日中に実装予定です。お待ちください')),
-                  );
+                  onRestorePurchases?.call();
                 },
               ),
 
@@ -1407,12 +1568,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final folders = store.folders;
     final pinned = store.bookmarks.where((b) => b.isPinned).toList();
 
-    // Calculate the same tile size as the "All" grid (2 columns, padding=12, spacing=8, aspect=0.85)
+    // レスポンシブなカラム数を取得して、横スクロールのタイルサイズを計算
     final screenWidth = MediaQuery.of(context).size.width;
-    const horizontalPadding = 12.0 * 2; // left + right in SliverPadding
-    const crossAxisSpacing = 8.0;       // spacing between the 2 columns
-    const childAspectRatio = 0.85;      // width / height in the grid
-    final tileWidth = (screenWidth - horizontalPadding - crossAxisSpacing) / 2;
+    final crossAxisCount = getResponsiveCrossAxisCount(screenWidth);
+    const horizontalPadding = 12.0 * 2; // left + right padding
+    final crossAxisSpacing = 8.0 * (crossAxisCount - 1); // spacing between columns
+    const childAspectRatio = 0.85;      // width / height ratio
+    final tileWidth = (screenWidth - horizontalPadding - crossAxisSpacing) / crossAxisCount;
     final tileHeight = tileWidth / childAspectRatio;
 
     // 初回のみ順序を初期化
@@ -1811,11 +1973,16 @@ class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
                     child: Center(child: Text('ブックマークはありません')),
                   );
                 }
+                
+                // レスポンシブなカラム数を取得
+                final screenWidth = MediaQuery.of(context).size.width;
+                final crossAxisCount = getResponsiveCrossAxisCount(screenWidth);
+                
                 return SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   sliver: SliverGrid.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
                       mainAxisSpacing: 8,
                       crossAxisSpacing: 8,
                       childAspectRatio: 0.85,
@@ -3264,8 +3431,8 @@ class FolderScreen extends StatelessWidget {
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     sliver: SliverGrid.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: getResponsiveCrossAxisCount(MediaQuery.of(context).size.width),
                         mainAxisSpacing: 8,
                         crossAxisSpacing: 8,
                         childAspectRatio: 0.85,
