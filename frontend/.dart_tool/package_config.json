@@ -386,6 +386,12 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "lottie",
+      "rootUri": "file:///Users/hashinokuchishougo/.pub-cache/hosted/pub.dev/lottie-3.3.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.9"
+    },
+    {
       "name": "matcher",
       "rootUri": "file:///Users/hashinokuchishougo/.pub-cache/hosted/pub.dev/matcher-0.12.17",
       "packageUri": "lib/",

@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app_links/app_links.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:lottie/lottie.dart';
 
 // Models
 import 'models/tag_model.dart';
@@ -60,7 +61,7 @@ String get apiBaseUrl => apiBaseUrls[currentApiEnvironment]!;
 
 // ====== デバッグ用: 広告表示フラグ ======
 const bool requireRewardedAdForAI = false; // falseで広告スキップ（デバッグ用）
-const bool showBannerAds = false; // falseでバナー広告非表示（デバッグ用）
+const bool showBannerAds = true; // falseでバナー広告非表示（デバッグ用）
 
 // ====== レスポンシブレイアウト用ヘルパー関数 ======
 /// 画面幅に応じて最適なグリッドのカラム数を返す
@@ -1207,12 +1208,12 @@ class AppDrawer extends StatelessWidget {
                   color: PurchaseManager().isPurchased ? Colors.green : null,
                 ),
                 title: Text(
-                  PurchaseManager().isPurchased ? '広告削除済み' : '広告削除',
+                  PurchaseManager().isPurchased ? 'バナー広告削除済み' : 'バナー広告削除',
                 ),
                 subtitle: Text(
                   PurchaseManager().isPurchased 
                       ? 'すべての広告が削除されています'
-                      : '買い切り課金で広告を削除',
+                      : '買い切り課金でバナー広告を削除',
                 ),
                 onTap: PurchaseManager().isPurchased 
                     ? null 
@@ -2994,8 +2995,14 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(
-                          strokeWidth: 4,
+                        // Lottieアニメーション
+                        SizedBox(
+                          width: 200,
+                          height: 200,
+                          child: Lottie.asset(
+                            'assets/images/Technology isometric ai robot brain.json',
+                            fit: BoxFit.contain,
+                          ),
                         ),
                         const SizedBox(height: 24),
                         Text(
