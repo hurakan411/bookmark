@@ -1756,6 +1756,74 @@ class AllBookmarksScreen extends StatefulWidget {
 
 class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
   String? _tagFilter; // null: 全て, 'none': タグなし, その他: タグID
+  String _layoutMode = 'grid_normal'; // 'grid_compact', 'grid_normal', 'list'
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLayoutMode();
+  }
+
+  Future<void> _loadLayoutMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _layoutMode = prefs.getString('bookmark_layout_mode') ?? 'grid_normal';
+    });
+  }
+
+  Future<void> _saveLayoutMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('bookmark_layout_mode', mode);
+    setState(() {
+      _layoutMode = mode;
+    });
+  }
+
+  void _showLayoutDialog() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return SimpleDialog(
+          title: const Text('表示レイアウト'),
+          children: [
+            SimpleDialogOption(
+              child: Row(
+                children: [
+                  Icon(Icons.grid_on, color: _layoutMode == 'grid_compact' ? Theme.of(context).colorScheme.primary : null),
+                  const SizedBox(width: 16),
+                  const Text('グリッド表示（多い）'),
+                ],
+              ),
+              onPressed: () => Navigator.pop(ctx, 'grid_compact'),
+            ),
+            SimpleDialogOption(
+              child: Row(
+                children: [
+                  Icon(Icons.grid_view, color: _layoutMode == 'grid_normal' ? Theme.of(context).colorScheme.primary : null),
+                  const SizedBox(width: 16),
+                  const Text('グリッド表示（少ない）'),
+                ],
+              ),
+              onPressed: () => Navigator.pop(ctx, 'grid_normal'),
+            ),
+            SimpleDialogOption(
+              child: Row(
+                children: [
+                  Icon(Icons.view_list, color: _layoutMode == 'list' ? Theme.of(context).colorScheme.primary : null),
+                  const SizedBox(width: 16),
+                  const Text('リスト表示'),
+                ],
+              ),
+              onPressed: () => Navigator.pop(ctx, 'list'),
+            ),
+          ],
+        );
+      },
+    );
+    if (selected != null) {
+      await _saveLayoutMode(selected);
+    }
+  }
 
   void _showFilterDialog() async {
   final store = StoreProvider.of(this.context);
@@ -1925,6 +1993,11 @@ class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
                             : '複数選択モード',
                       ),
                       IconButton(
+                        icon: Icon(_layoutMode == 'list' ? Icons.view_list : Icons.grid_view),
+                        onPressed: _showLayoutDialog,
+                        tooltip: '表示レイアウト',
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.filter_list),
                         onPressed: _showFilterDialog,
                         tooltip: 'フィルター',
@@ -1975,51 +2048,99 @@ class _AllBookmarksScreenState extends State<AllBookmarksScreen> {
                   );
                 }
                 
-                // レスポンシブなカラム数を取得
-                final screenWidth = MediaQuery.of(context).size.width;
-                final crossAxisCount = getResponsiveCrossAxisCount(screenWidth);
-                
-                return SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  sliver: SliverGrid.builder(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: 0.85,
-                    ),
-                    itemCount: sorted.length,
-                    itemBuilder: (c, i) {
-                      final bm = sorted[i];
-                      final selected = selectedIds.contains(bm.id);
-                      return Stack(
-                        children: [
-                          BookmarkGridCard(bm: bm, store: store),
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: selectionMode
-                                ? Checkbox(
-                                    value: selected,
-                                    onChanged: (_) => _toggleSelect(bm.id),
-                                  )
-                                : const SizedBox.shrink(),
+                // レイアウトモードに応じて表示を切り替え
+                if (_layoutMode == 'list') {
+                  // リスト表示
+                  return SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    sliver: SliverList.builder(
+                      itemCount: sorted.length,
+                      itemBuilder: (c, i) {
+                        final bm = sorted[i];
+                        final selected = selectedIds.contains(bm.id);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: BookmarkListCard(
+                            bm: bm,
+                            store: store,
+                            selectionMode: selectionMode,
+                            selected: selected,
+                            onToggleSelect: () => _toggleSelect(bm.id),
                           ),
-                          if (selectionMode)
-                            Positioned.fill(
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: () => _toggleSelect(bm.id),
-                                  borderRadius: BorderRadius.circular(12),
+                        );
+                      },
+                    ),
+                  );
+                } else {
+                  // グリッド表示
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  int crossAxisCount;
+                  double childAspectRatio;
+                  
+                  if (_layoutMode == 'grid_compact') {
+                    // 多いグリッド表示
+                    if (screenWidth >= 1024) {
+                      crossAxisCount = 6;
+                    } else if (screenWidth >= 768) {
+                      crossAxisCount = 5;
+                    } else if (screenWidth >= 600) {
+                      crossAxisCount = 4;
+                    } else {
+                      crossAxisCount = 3;
+                    }
+                    childAspectRatio = 0.75;
+                  } else {
+                    // 通常のグリッド表示
+                    crossAxisCount = getResponsiveCrossAxisCount(screenWidth);
+                    childAspectRatio = 0.85;
+                  }
+                  
+                  return SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    sliver: SliverGrid.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: childAspectRatio,
+                      ),
+                      itemCount: sorted.length,
+                      itemBuilder: (c, i) {
+                        final bm = sorted[i];
+                        final selected = selectedIds.contains(bm.id);
+                        return Stack(
+                          children: [
+                            BookmarkGridCard(
+                              bm: bm,
+                              store: store,
+                              isCompactMode: _layoutMode == 'grid_compact',
+                            ),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: selectionMode
+                                  ? Checkbox(
+                                      value: selected,
+                                      onChanged: (_) => _toggleSelect(bm.id),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            if (selectionMode)
+                              Positioned.fill(
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () => _toggleSelect(bm.id),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                );
+                          ],
+                        );
+                      },
+                    ),
+                  );
+                }
               },
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 88)),
@@ -3631,10 +3752,228 @@ class BookmarkCard extends StatelessWidget {
   }
 }
 
+// リスト表示用のブックマークカード
+class BookmarkListCard extends StatelessWidget {
+  final BookmarkModel bm;
+  final AppStore store;
+  final bool selectionMode;
+  final bool selected;
+  final VoidCallback onToggleSelect;
+  
+  const BookmarkListCard({
+    super.key,
+    required this.bm,
+    required this.store,
+    required this.selectionMode,
+    required this.selected,
+    required this.onToggleSelect,
+  });
+  
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: selectionMode
+            ? onToggleSelect
+            : () async {
+                store.opened(bm);
+                final uri = Uri.parse(bm.url);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // サムネイル
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey, width: 1.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: bm.thumbnailUrl != null
+                    ? _buildThumbnailWidget(
+                        bm.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                      )
+                    : const Center(child: Icon(Icons.link, size: 32)),
+              ),
+              const SizedBox(width: 12),
+              // コンテンツ
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // タイトル
+                    Text(
+                      bm.title,
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    // URL
+                    Text(
+                      bm.url,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    // メモ（excerpt）
+                    if (bm.excerpt.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      RichText(
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        text: TextSpan(
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black87,
+                            height: 1.3,
+                          ),
+                          children: [
+                            const TextSpan(
+                              text: 'メモ：',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                            TextSpan(text: bm.excerpt),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    // タグ
+                    if (bm.tags.isNotEmpty)
+                      SizedBox(
+                        height: 24,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: bm.tags.length,
+                          separatorBuilder: (context, i) => const SizedBox(width: 4),
+                          itemBuilder: (context, i) => Chip(
+                            label: Text(
+                              bm.tags[i].name,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF607D8B),
+                              ),
+                            ),
+                            backgroundColor: Colors.grey[200],
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: EdgeInsets.zero,
+                            side: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // アクション
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (selectionMode)
+                    Checkbox(
+                      value: selected,
+                      onChanged: (_) => onToggleSelect(),
+                    )
+                  else ...[
+                    PopupMenuButton<String>(
+                      tooltip: '編集・削除',
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      onSelected: (value) async {
+                        if (value == 'edit') {
+                          await showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            useSafeArea: true,
+                            builder: (ctx) => StoreProvider(
+                              store: store,
+                              child: AddBookmarkSheet(bm: bm),
+                            ),
+                          );
+                        } else if (value == 'delete') {
+                          final ok = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('ブックマークを削除しますか？'),
+                              content: const Text('この操作は元に戻せません。'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('キャンセル'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('削除'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (ok == true) {
+                            await store.removeBookmark(bm);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('ブックマークを削除しました')),
+                              );
+                            }
+                          }
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(value: 'edit', child: Text('編集')),
+                        const PopupMenuItem(value: 'delete', child: Text('削除')),
+                      ],
+                    ),
+                    IconButton(
+                      tooltip: bm.isPinned ? 'ピン解除' : 'ピン留め',
+                      icon: Icon(
+                        bm.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                        size: 20,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                      onPressed: () => store.togglePin(bm),
+                      splashRadius: 20,
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class BookmarkGridCard extends StatelessWidget {
   final BookmarkModel bm;
   final AppStore store;
-  const BookmarkGridCard({super.key, required this.bm, required this.store});
+  final bool isCompactMode;
+  const BookmarkGridCard({
+    super.key,
+    required this.bm,
+    required this.store,
+    this.isCompactMode = false,
+  });
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -3714,7 +4053,11 @@ class BookmarkGridCard extends StatelessWidget {
                     children: [
                       PopupMenuButton<String>(
                         tooltip: '編集・削除',
-                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        icon: Icon(Icons.edit_outlined, size: isCompactMode ? 16 : 20),
+                        padding: isCompactMode ? EdgeInsets.zero : const EdgeInsets.all(8.0),
+                        constraints: isCompactMode 
+                            ? const BoxConstraints.tightFor(width: 28, height: 28)
+                            : null,
                         onSelected: (value) async {
                           if (value == 'edit') {
                             await showModalBottomSheet(
@@ -3751,11 +4094,17 @@ class BookmarkGridCard extends StatelessWidget {
                       ),
                       IconButton(
                         tooltip: bm.isPinned ? 'ピン解除' : 'ピン留め',
-                        icon: Icon(bm.isPinned ? Icons.push_pin : Icons.push_pin_outlined, size: 20),
+                        icon: Icon(
+                          bm.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                          size: isCompactMode ? 16 : 20,
+                        ),
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                        constraints: BoxConstraints.tightFor(
+                          width: isCompactMode ? 28 : 36,
+                          height: isCompactMode ? 28 : 36,
+                        ),
                         onPressed: () => store.togglePin(bm),
-                        splashRadius: 20,
+                        splashRadius: isCompactMode ? 16 : 20,
                       ),
                     ],
                   ),
