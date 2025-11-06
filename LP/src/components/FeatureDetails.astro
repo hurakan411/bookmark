@@ -1,0 +1,66 @@
+---
+const details = [
+  {
+    title: "あなたのブックマークに最適な\nフォルダ/タグをAIが分析",
+    description: "あなたがアプリに登録したブックマーク一覧をAIが分析し、最適なフォルダ/タグ構成を提案します。その上で、各ブックマークをフォルダに自動で配置し、タグ付けまでします。",
+    image: "/images/image1.png", // 1219x2434
+    imageAlt: "AI分析画面"
+  },
+  {
+    title: "ブラウザからアプリへ\n簡単にブックマーク追加",
+    description: "AI Bookmark Managerアプリを開くことなく、ブックマーク追加できます。",
+    image: "/images/image2.png",
+    imageAlt: "ムードトラッキング画面"
+  },
+  // 右スクショ・左説明文
+  {
+    title: "コントロールパネルから\nアプリを簡単起動",
+    description: "ホーム画面へ戻らずとも、コントロールパネルからアプリを起動できます（※ios18以降限定）。",
+    image: "/images/image3.png",
+    imageAlt: "AI自動分類画面",
+    reverse: true
+  },
+  // 左スクショ・右説明文
+  {
+    title: "今後もAIを駆使した機能を続々と搭載予定",
+    description: "ブックマークの要約、ユーザーの傾向分析など、今後もAIを活用した機能を順次開発予定です。",
+    image: "/images/image4.png",
+    imageAlt: "デバイス同期画面",
+    reverse: false
+  }
+];
+---
+
+<section class="py-12 space-y-10 px-6 sm:px-12 md:px-24 lg:px-40 xl:px-64">
+  {details.map((detail, index) => (
+    <div class={`grid gap-8 lg:grid-cols-2 lg:gap-12 items-center ${typeof detail.reverse === 'boolean' ? (detail.reverse ? 'lg:flex-row-reverse' : '') : (index % 2 === 1 ? 'lg:flex-row-reverse' : '')}`}>
+      <!-- テキスト -->
+      <div class={`space-y-4 ${index % 2 === 1 ? 'lg:order-2' : ''}`}>
+  <h3 class="text-2xl font-bold sm:text-3xl" style="color:#4A6479;" set:html={detail.title.replace(/\n/g, '<br />')}>
+        </h3>
+  <ul class="text-base text-gray-600 leading-relaxed list-disc list-inside space-y-4">
+          {detail.description.split('。').filter(Boolean).map(line => (
+            <li>{line.replace(/\n/g, '')}。</li>
+          ))}
+        </ul>
+      </div>
+      
+      <!-- スクリーンショット -->
+      <div class={`${index % 2 === 1 ? 'lg:order-1' : ''}`}>
+        <div class="relative rounded-xl border border-gray-200 p-2 shadow-lg overflow-hidden">
+          <!-- 全画像を1219/2434で表示 -->
+          <div class="flex justify-center">
+            <img
+              src={detail.image}
+              alt={detail.imageAlt}
+              class="max-h-[400px] max-w-[200px] w-auto h-auto object-contain rounded-lg"
+              style="aspect-ratio:1219/2434; background: transparent;"
+            />
+          </div>
+        </div>
+      </div>
+        </div>
+      </div>
+    </div>
+  ))}
+</section>

@@ -1,0 +1,45 @@
+---
+const faqs = [
+  {
+    question: "バックアップを取ることはできますか？",
+    answer: "手動でバックアップを取る機能がございます。今後は自動でバックアップが取られるように変更予定です。"
+  },
+  {
+    question: "携帯の機種変更を行った際に、データを引き継げますか？",
+    answer: "可能です。上記のバックアップ機能により異なる端末間でデータを共有することができます。"
+  },
+  {
+    question: "利用にはお金がかかりますか？",
+    answer: "基本利用は完全無料です。画面に表示されるバナー広告を削除したい場合は課金が必要となります。"
+  },
+];
+---
+
+<section class="pt-12 pb-4">
+  <div class="max-w-2xl mx-auto space-y-6">
+    <h2 class="text-2xl font-bold text-center sm:text-3xl" style="color:#4A6479;">
+      よくある質問
+    </h2>
+    
+    <div class="space-y-3">
+      {faqs.map((faq) => (
+        <details class="group rounded-lg border border-gray-200 bg-white overflow-hidden transition-all hover:border-gray-300 shadow-sm">
+          <summary class="cursor-pointer list-none px-5 py-4 text-base font-semibold text-gray-900 flex items-center justify-between select-none">
+            <span>{faq.question}</span>
+            <svg 
+              class="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </summary>
+          <div class="px-5 pb-4 text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-3">
+            {faq.answer}
+          </div>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>

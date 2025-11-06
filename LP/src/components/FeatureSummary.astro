@@ -1,0 +1,30 @@
+---
+const features = [
+  "あなたのブックマークに最適なフォルダ/タグを分析",
+  "ブラウザからアプリへ簡単にブックマーク追加",
+  "コントロールパネルからアプリを簡単起動",
+  "今後もAIを駆使した機能を続々と搭載予定"
+];
+---
+
+<section class="py-12 text-center">
+  <div class="max-w-3xl mx-auto space-y-4">
+    <h2 class="text-2xl font-bold sm:text-3xl" style="color:#4A6479;">
+      AIを駆使したブックマーク管理を提供
+    </h2>
+    <p class="text-base text-gray-600 leading-relaxed">
+  AI Bookmark Managerは、ブックマーク一覧に応じた最適なフォルダ/タグ構成をAIが提案します。<br />
+  また、AIによるサポートだけでなくブックマーク管理に必要な各種機能を完備しています。
+    </p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6 text-left">
+      {features.map((feature) => (
+        <div class="flex items-start gap-2 p-3 rounded-lg bg-white border border-gray-200 shadow-sm">
+          <svg class="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+          <span class="text-sm text-gray-700">{feature}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

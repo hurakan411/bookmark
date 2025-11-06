@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900 font-sans antialiased;
+  background-image: linear-gradient(to bottom, rgba(249, 250, 251, 1) 0%, rgba(243, 244, 246, 1) 100%);
+}
+
+a {
+  @apply text-primary-300 transition-colors duration-200;
+}
+
+a:hover {
+  @apply text-primary-100;
+}
+
+.section-title {
+  @apply text-sm uppercase tracking-[0.3em] text-primary-200/70 font-semibold;
+}
+
+.gradient-text {
+  @apply bg-clip-text text-transparent;
+  background-image: linear-gradient(120deg, #9ea3ff 0%, #ff99d3 50%, #6c74ff 100%);
+}
+
+.card {
+  @apply rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800/70 shadow-card;
+}
+
+.stat-glow {
+  @apply relative overflow-hidden;
+}
+
+.stat-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top, rgba(108, 116, 255, 0.25), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.stat-glow:hover::after {
+  opacity: 1;
+}
+
+.button-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-primary-500 px-7 py-3 text-sm font-semibold text-white transition duration-200 shadow-glow shadow-primary-500/40 hover:-translate-y-0.5 hover:bg-primary-400;
+}
+
+.button-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full border border-slate-700 bg-slate-900/60 px-7 py-3 text-sm font-semibold text-slate-100 transition duration-200 hover:-translate-y-0.5 hover:border-primary-400/70 hover:text-primary-200;
+}
+
+.badge {
+  @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-[0.25em] text-white/70 backdrop-blur;
+}
+
+.feature-icon {
+  @apply flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-500/20 text-primary-200;
+}
+
+.testimonial-card {
+  @apply card p-6 transition duration-300 hover:shadow-glow;
+}
+
+.footer-link {
+  @apply text-sm text-slate-400 transition hover:text-slate-200;
+}

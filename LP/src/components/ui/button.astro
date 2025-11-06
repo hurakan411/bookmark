@@ -1,0 +1,42 @@
+---
+interface Props {
+	size?: "sm" | "md" | "lg";
+	block?: boolean;
+	style?: "outline" | "primary" | "link";
+	class?: string;
+	[x: string]: any;
+}
+
+const {
+	size = "md",
+	style = "primary",
+	block,
+	class: className,
+	...rest
+} = Astro.props;
+
+const sizes = {
+	sm: "px-3 py-1.5 text-sm",
+	md: "px-5 py-2.5 text-sm",
+	lg: "px-7 py-3 text-base",
+};
+
+const styles = {
+	outline: "border-2 border-white/20 hover:bg-white/10 text-white hover:border-white/40 transition-all",
+	primary:
+		"bg-primary-500 text-white hover:bg-primary-400 shadow-glow shadow-primary-500/40 hover:-translate-y-0.5 border-2 border-transparent transition-all",
+	link: "text-primary-300 hover:text-primary-100 underline-offset-4 hover:underline",
+};
+---
+
+<button
+	{...rest}
+	class:list={[
+		"inline-flex items-center justify-center gap-2 rounded-full font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2",
+		block && "w-full",
+		sizes[size],
+		styles[style],
+		className,
+	]}>
+	<slot />
+</button>

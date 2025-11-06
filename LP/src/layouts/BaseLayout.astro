@@ -1,0 +1,33 @@
+---
+import "../styles/global.css";
+
+const {
+  title = "AI Bookmark Manager — AI機能搭載のブックマーク管理アプリ",
+  description = "AI Bookmark Managerはフォルダ自動整理など、AIがサポートしてくれるブックマーク管理アプリ。"
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="ja" class="scroll-smooth">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+  <meta property="og:image" content="/images/og-preview.svg" />
+    <meta name="theme-color" content="#0a0d40" />
+  <link rel="icon" type="image/png" href="/images/Logo_AIBookmark.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lexend:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-gradient-to-b from-white to-gray-300">
+    <slot />
+  </body>
+</html>

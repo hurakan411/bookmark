@@ -49,7 +49,7 @@ enum ApiEnvironment {
 }
 
 // 現在の環境設定（ここを変更するだけで切り替え可能）
-const ApiEnvironment currentApiEnvironment = ApiEnvironment.local;
+const ApiEnvironment currentApiEnvironment = ApiEnvironment.render_prd;
 
 // 環境ごとのベースURL
 const Map<ApiEnvironment, String> apiBaseUrls = {
@@ -62,8 +62,8 @@ const Map<ApiEnvironment, String> apiBaseUrls = {
 String get apiBaseUrl => apiBaseUrls[currentApiEnvironment]!;
 
 // ====== デバッグ用: 広告表示フラグ ======
-const bool requireRewardedAdForAI = false; // falseで広告スキップ（デバッグ用）
-const bool showBannerAds = false; // falseでバナー広告非表示（デバッグ用）
+const bool requireRewardedAdForAI = true; // falseで広告スキップ（デバッグ用）
+const bool showBannerAds = true; // falseでバナー広告非表示（デバッグ用）
 
 // ====== レスポンシブレイアウト用ヘルパー関数 ======
 /// 画面幅に応じて最適なグリッドのカラム数を返す
