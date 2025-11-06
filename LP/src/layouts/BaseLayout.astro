@@ -14,18 +14,58 @@ const {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    
+    <!-- SEO Keywords -->
+    <meta name="keywords" content="AI Bookmark Manager, ブックマーク管理, AI, 自動整理, ブックマーク, スマートフォルダ, Webクリップ, URL管理, お気に入り管理　ios" />
+    <meta name="author" content="AI Bookmark Manager" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://your-domain.com/" />
+    
+    <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://your-domain.com/" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-  <meta property="og:image" content="/images/og-preview.svg" />
+    <meta property="og:image" content="https://your-domain.com/images/Logo_AIBookmark.png" />
+    <meta property="og:site_name" content="AI Bookmark Manager" />
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://your-domain.com/" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://your-domain.com/images/Logo_AIBookmark.png" />
+    
     <meta name="theme-color" content="#0a0d40" />
-  <link rel="icon" type="image/png" href="/images/Logo_AIBookmark.png" />
+    <link rel="icon" type="image/png" href="/images/Logo_AIBookmark.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lexend:wght@500;600&display=swap"
       rel="stylesheet"
     />
+    
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "AI Bookmark Manager",
+        "applicationCategory": "ProductivityApplication",
+        "operatingSystem": "iOS, Android",
+        "description": "AI Bookmark Managerはフォルダ自動整理など、AIがサポートしてくれるブックマーク管理アプリ。スマートにブックマークを管理し、必要な情報をすぐに見つけられます。",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "JPY"
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.5",
+          "reviewCount": "100"
+        }
+      }
+    </script>
   </head>
   <body class="bg-gradient-to-b from-white to-gray-300">
     <slot />

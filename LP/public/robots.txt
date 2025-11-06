@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bookmarklp411.netlify.app//sitemap.xml
