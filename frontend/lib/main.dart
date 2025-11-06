@@ -43,17 +43,19 @@ import 'package:in_app_review/in_app_review.dart';
 // ====== API設定 ======
 // バックエンドAPI環境の切り替え
 enum ApiEnvironment {
-  local,    // ローカル開発環境 (localhost:8000)
-  render,   // Render.com 本番環境
+  local,        // ローカル開発環境 (localhost:8000)
+  render_poc,   // Render.com 検証用環境
+  render_prd,   // Render.com 本番環境
 }
 
 // 現在の環境設定（ここを変更するだけで切り替え可能）
-const ApiEnvironment currentApiEnvironment = ApiEnvironment.render;
+const ApiEnvironment currentApiEnvironment = ApiEnvironment.local;
 
 // 環境ごとのベースURL
 const Map<ApiEnvironment, String> apiBaseUrls = {
   ApiEnvironment.local: 'http://localhost:8000',
-  ApiEnvironment.render: 'https://bookmark-zhnd.onrender.com',
+  ApiEnvironment.render_poc: 'https://bookmark-1.onrender.com',
+  ApiEnvironment.render_prd: 'https://bookmark-zhnd.onrender.com',
 };
 
 // 現在使用するベースURL
@@ -61,7 +63,7 @@ String get apiBaseUrl => apiBaseUrls[currentApiEnvironment]!;
 
 // ====== デバッグ用: 広告表示フラグ ======
 const bool requireRewardedAdForAI = false; // falseで広告スキップ（デバッグ用）
-const bool showBannerAds = true; // falseでバナー広告非表示（デバッグ用）
+const bool showBannerAds = false; // falseでバナー広告非表示（デバッグ用）
 
 // ====== レスポンシブレイアウト用ヘルパー関数 ======
 /// 画面幅に応じて最適なグリッドのカラム数を返す
@@ -459,6 +461,16 @@ class AppStore extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching folders: $e');
+    }
+  }
+
+  // 全フォルダをフラットに取得（階層構造ではなく全件取得）
+  Future<List<FolderModel>> fetchAllFoldersFlat() async {
+    try {
+      return await _folderRepo.fetchAllFlat();
+    } catch (e) {
+      debugPrint('Error fetching folders flat: $e');
+      return [];
     }
   }
 
@@ -2159,11 +2171,29 @@ class FolderStructureAnalysis {
   final List<SuggestedFolder> suggestedFolders;
   final List<String> foldersToRemove;
   final String overallReasoning;
+  final List<FinalFolderItem>? finalStructure;  // 最終構成
 
   FolderStructureAnalysis({
     required this.suggestedFolders,
     required this.foldersToRemove,
     required this.overallReasoning,
+    this.finalStructure,
+  });
+}
+
+class FinalFolderItem {
+  final String name;
+  final String parent;
+  final String status;  // "new", "existing", "to_remove"
+  final String description;
+  final List<String> mergeFrom;
+
+  FinalFolderItem({
+    required this.name,
+    required this.parent,
+    required this.status,
+    required this.description,
+    required this.mergeFrom,
   });
 }
 
@@ -2811,6 +2841,10 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
     setState(() => _isAnalyzingFolders = true);
 
     try {
+      // 最新データを取得（フォルダ・ブックマーク全件）
+      await store.fetchFolders();
+      await store.fetchBookmarks();
+
       // ブックマークとフォルダのデータを準備
       final bookmarksData = store.bookmarks.map((bm) {
         final folder = store.folders.firstWhere(
@@ -2825,7 +2859,37 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
         };
       }).toList();
 
-      final currentFolders = store.folders.map((f) => f.name).toList();
+      // 階層情報を含む現在のフォルダリストを作成
+      String? getParentName(String? parentId) {
+        if (parentId == null || parentId.isEmpty) return null;
+        try {
+          return store.folders.firstWhere((f) => f.id == parentId).name;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // 全フォルダをフラットに取得（子フォルダも含む）
+      List<FolderModel> getAllFoldersFlat(List<FolderModel> folders) {
+        final result = <FolderModel>[];
+        for (final folder in folders) {
+          result.add(folder);
+          result.addAll(getAllFoldersFlat(folder.children));
+        }
+        return result;
+      }
+
+      final allFoldersFlat = getAllFoldersFlat(store.folders);
+      debugPrint('📊 送信するフォルダ総数: ${allFoldersFlat.length}');
+      
+      final currentFoldersWithHierarchy = allFoldersFlat.map((f) {
+        final parentName = getParentName(f.parentId) ?? '';
+        debugPrint('  📁 ${parentName.isEmpty ? "" : "$parentName/"}${f.name}');
+        return {
+          'name': f.name,
+          'parent': parentName,
+        };
+      }).toList();
 
       // APIリクエスト
       final response = await http.post(
@@ -2833,7 +2897,7 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'bookmarks': bookmarksData,
-          'current_folders': currentFolders,
+          'current_folders': currentFoldersWithHierarchy,
           // 最大階層数は送信しない（AIが自動で最適な階層を決定）
         }),
       );
@@ -2857,6 +2921,17 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
         ).toList(),
         foldersToRemove: (result['folders_to_remove'] as List).cast<String>(),
         overallReasoning: result['overall_reasoning'],
+        finalStructure: result['final_structure'] != null
+            ? (result['final_structure'] as List).map((f) => 
+                FinalFolderItem(
+                  name: f['name'],
+                  parent: f['parent'] ?? '',
+                  status: f['status'],
+                  description: f['description'] ?? '',
+                  mergeFrom: (f['merge_from'] as List?)?.cast<String>() ?? [],
+                )
+              ).toList()
+            : null,
       );
 
       if (!mounted) return;
@@ -6254,135 +6329,436 @@ class FolderAnalysisResultSheet extends StatefulWidget {
 
 class _FolderAnalysisResultSheetState extends State<FolderAnalysisResultSheet> {
   final Set<String> _selectedNewFolders = {};
-  final Set<String> _selectedMergeFolders = {};
   final Set<String> _selectedRemoveFolders = {};
 
   @override
   void initState() {
     super.initState();
-    // デフォルトで全て選択
-    // 新規フォルダ（merge_fromが空のもの）
+    
+    debugPrint('========== FolderAnalysisResultSheet initState ==========');
+    
+    // すべての提案フォルダを新規作成対象として選択
     _selectedNewFolders.addAll(
-      widget.analysis.suggestedFolders
-        .where((f) => f.mergeFrom.isEmpty)
-        .map((f) => f.name)
+      widget.analysis.suggestedFolders.map((f) => f.name)
     );
-    // 統合フォルダ（merge_fromが2個以上あるもの）
-    _selectedMergeFolders.addAll(
-      widget.analysis.suggestedFolders
-        .where((f) => f.mergeFrom.length >= 2)
-        .map((f) => f.name)
-    );
+    
+    // すべての削除推奨フォルダを選択
     _selectedRemoveFolders.addAll(widget.analysis.foldersToRemove);
+    
+    debugPrint('選択されたフォルダ: ${_selectedNewFolders.length}件');
+    debugPrint('選択された削除フォルダ: ${_selectedRemoveFolders.length}件');
   }
 
   Future<void> _applyChanges() async {
     final context = this.context;
     final store = StoreProvider.of(context);
-    int changes = 0;
+    int deletedCount = 0;
+    int createdCount = 0;
 
     try {
-      // 作成済みフォルダ名とIDのマップ
-      final Map<String, String> createdFolderIds = {};
+      debugPrint('========== フォルダ適用開始（finalStructure基準） ==========');
       
-      // 選択されたすべてのフォルダ名（新規 + 統合）
-      final allSelectedNames = {..._selectedNewFolders, ..._selectedMergeFolders};
+      // finalStructureが存在しない場合はエラー
+      if (widget.analysis.finalStructure == null || widget.analysis.finalStructure!.isEmpty) {
+        throw Exception('finalStructureが存在しません');
+      }
       
-      // 1. 親フォルダから順番に作成（階層を考慮）
-      // まず親を持たないフォルダ（トップレベル）を作成
-      for (final selectedName in allSelectedNames) {
-        final suggested = widget.analysis.suggestedFolders.firstWhere((f) => f.name == selectedName);
-        
-        if (suggested.parent == null || suggested.parent!.isEmpty) {
-          // 統合元フォルダがある場合は削除
-          for (final oldFolderName in suggested.mergeFrom) {
-            final oldFolder = store.folders.firstWhere(
-              (f) => f.name == oldFolderName, 
-              orElse: () => FolderModel(id: '', name: '', sortOrder: 0)
-            );
-            if (oldFolder.id.isNotEmpty) {
-              await store.deleteFolder(oldFolder.id);
-              changes++;
-            }
-          }
+      // ===== STEP 0: 重複フォルダのクリーンアップ =====
+      debugPrint('========== STEP 0: データベース重複クリーンアップ ==========');
+      
+      // 全フォルダを取得
+      final allFoldersRaw = await store.fetchAllFoldersFlat();
+      debugPrint('クリーンアップ前: ${allFoldersRaw.length}件');
+      
+      // IDマップを作成（親名解決用）
+      final idToFolderMap = <String, FolderModel>{
+        for (final f in allFoldersRaw) f.id: f,
+      };
+      
+      String getParentName(String? parentId) {
+        if (parentId == null || parentId.isEmpty) return '';
+        return idToFolderMap[parentId]?.name ?? '';
+      }
+      
+      // (親名, name) の組み合わせでグループ化
+      final folderGroups = <String, List<FolderModel>>{};
+      for (final folder in allFoldersRaw) {
+        final parentName = getParentName(folder.parentId);
+        final key = '$parentName|${folder.name}';
+        folderGroups.putIfAbsent(key, () => []).add(folder);
+      }
+      
+      // 重複があるグループを検出して古いものを削除
+      int duplicatesRemoved = 0;
+      for (final entry in folderGroups.entries) {
+        if (entry.value.length > 1) {
+          // 最新のものを残して古いものを削除
+          entry.value.sort((a, b) => int.parse(b.id).compareTo(int.parse(a.id)));
+          final toKeep = entry.value.first;
+          final toDelete = entry.value.skip(1).toList();
           
-          // 新しいフォルダを追加（まだ存在しない場合）
-          if (!store.folders.any((f) => f.name == suggested.name)) {
-            await store.addFolder(suggested.name);
-            changes++;
-            // 作成したフォルダのIDを記録（後で参照できるように再取得）
-            await store.fetchFolders();
-            final created = store.folders.firstWhere((f) => f.name == suggested.name);
-            createdFolderIds[suggested.name] = created.id;
-          } else {
-            // 既存フォルダのIDを記録
-            final existing = store.folders.firstWhere((f) => f.name == suggested.name);
-            createdFolderIds[suggested.name] = existing.id;
+          debugPrint('🔧 重複検出: ${entry.key} - ${entry.value.length}件（最新: ${toKeep.id} を保持）');
+          
+          for (final folder in toDelete) {
+            try {
+              await store.deleteFolder(folder.id);
+              duplicatesRemoved++;
+              debugPrint('  🗑️ 重複削除: id=${folder.id}');
+            } catch (e) {
+              debugPrint('  ❌ 重複削除エラー: ${folder.id} - $e');
+            }
           }
         }
       }
       
-      // 次に子フォルダを作成（親フォルダが存在する場合のみ）
-      for (final selectedName in allSelectedNames) {
-        final suggested = widget.analysis.suggestedFolders.firstWhere((f) => f.name == selectedName);
-        
-        if (suggested.parent != null && suggested.parent!.isNotEmpty) {
-          // 親フォルダのIDを取得
-          String? parentId;
-          if (createdFolderIds.containsKey(suggested.parent)) {
-            parentId = createdFolderIds[suggested.parent];
-          } else {
-            final parentFolder = store.folders.firstWhere(
-              (f) => f.name == suggested.parent,
-              orElse: () => FolderModel(id: '', name: '', sortOrder: 0)
-            );
-            if (parentFolder.id.isNotEmpty) {
-              parentId = parentFolder.id;
-            }
-          }
-          
-          // 統合元フォルダがある場合は削除
-          for (final oldFolderName in suggested.mergeFrom) {
-            final oldFolder = store.folders.firstWhere(
-              (f) => f.name == oldFolderName, 
-              orElse: () => FolderModel(id: '', name: '', sortOrder: 0)
-            );
-            if (oldFolder.id.isNotEmpty) {
-              await store.deleteFolder(oldFolder.id);
-              changes++;
-            }
-          }
-          
-          // 新しいフォルダを追加（まだ存在しない場合）
-          if (!store.folders.any((f) => f.name == suggested.name)) {
-            await store.addFolder(suggested.name, parentId: parentId);
-            changes++;
+      debugPrint('クリーンアップ完了: ${duplicatesRemoved}件の重複を削除');
+      
+      // 最新のフォルダ情報を取得（階層＋フラット）
+      await store.fetchFolders();
+      final allFoldersFlatInitial = await store.fetchAllFoldersFlat();
+      
+      debugPrint('現在のフォルダ数: ${allFoldersFlatInitial.length}');
+      debugPrint('最終構成フォルダ数: ${widget.analysis.finalStructure!.length}');
+      
+      // 既存フォルダのマッピング（親名解決用：フラットリスト基準）
+      String? getParentNameByMaps(String? parentId, Map<String, FolderModel> idToFolder) {
+        if (parentId == null || parentId.isEmpty) return null;
+        return idToFolder[parentId]?.name;
+      }
+      
+      // IDマップを構築
+      Map<String, FolderModel> idToFolder = {
+        for (final f in allFoldersFlatInitial) f.id: f,
+      };
+      Map<String, String?> idToParentId = {
+        for (final f in allFoldersFlatInitial) f.id: f.parentId,
+      };
+      
+      // 現在の(親名|フォルダ名, FolderModel)マップ（サブフォルダ含む）
+      final currentFoldersMap = <String, FolderModel>{};
+      for (final folder in allFoldersFlatInitial) {
+        final parentName = getParentNameByMaps(folder.parentId, idToFolder) ?? '';
+        final key = '$parentName|${folder.name}';
+        currentFoldersMap[key] = folder;
+      }
+      
+      debugPrint('📊 現在のフォルダキー: ${currentFoldersMap.keys.toList()}');
+      debugPrint('📊 現在のフォルダ数（マップサイズ）: ${currentFoldersMap.length}');
+      debugPrint('📊 現在のフォルダ数（フラットリスト）: ${allFoldersFlatInitial.length}');
+      
+      // 重複チェック
+      final idSet = <String>{};
+      final duplicateIds = <String>[];
+      for (final f in allFoldersFlatInitial) {
+        if (idSet.contains(f.id)) {
+          duplicateIds.add(f.id);
+        }
+        idSet.add(f.id);
+      }
+      if (duplicateIds.isNotEmpty) {
+        debugPrint('⚠️ 重複ID検出: $duplicateIds');
+      }
+      
+      // 最終構成から期待されるフォルダセット
+      final expectedFolders = <String, FinalFolderItem>{};
+      for (final item in widget.analysis.finalStructure!) {
+        if (item.status == 'to_remove') continue; // 削除予定は除外
+        final key = '${item.parent}|${item.name}';
+        expectedFolders[key] = item;
+      }
+      
+      debugPrint('📊 期待されるフォルダキー: ${expectedFolders.keys.toList()}');
+      
+      // ===== STEP 1: 不要なフォルダを削除 =====
+      debugPrint('========== STEP 1: 不要フォルダの削除 ==========');
+      
+      // 明示的に削除すべきキー（AIのto_remove）
+      final explicitRemoveKeys = widget.analysis.finalStructure!
+          .where((i) => i.status == 'to_remove')
+          .map((i) => '${i.parent}|${i.name}')
+          .toSet();
+
+      debugPrint('📊 to_removeキー: ${explicitRemoveKeys.toList()}');
+      debugPrint('📊 currentFoldersMapに存在するか確認:');
+      for (final key in explicitRemoveKeys) {
+        final exists = currentFoldersMap.containsKey(key);
+        debugPrint('  $key → ${exists ? "存在" : "不在"}');
+        if (!exists) {
+          // 部分一致を探す
+          final partialMatches = currentFoldersMap.keys.where((k) => k.contains(key.split('|').last)).toList();
+          if (partialMatches.isNotEmpty) {
+            debugPrint('    部分一致: $partialMatches');
           }
         }
       }
 
-      // 2. 不要なフォルダを削除
-      for (final folderName in _selectedRemoveFolders) {
-        final folder = store.folders.firstWhere(
-          (f) => f.name == folderName, 
-          orElse: () => FolderModel(id: '', name: '', sortOrder: 0)
-        );
-        if (folder.id.isNotEmpty) {
+      // 削除対象を集約（明示的削除 + 期待外フォルダ）
+      final foldersToDelete = <FolderModel>[];
+      final alreadyQueuedIds = <String>{};
+
+      // 1) 明示指定
+      for (final key in explicitRemoveKeys) {
+        final f = currentFoldersMap[key];
+        if (f != null && !alreadyQueuedIds.contains(f.id)) {
+          foldersToDelete.add(f);
+          alreadyQueuedIds.add(f.id);
+          debugPrint('🗑️  削除対象(to_remove): $key (id: ${f.id})');
+        }
+      }
+
+      // 2) 期待構成から外れたフォルダ（例: 古い「日常」など）
+      for (final entry in currentFoldersMap.entries) {
+        if (!expectedFolders.containsKey(entry.key) && !alreadyQueuedIds.contains(entry.value.id)) {
+          foldersToDelete.add(entry.value);
+          alreadyQueuedIds.add(entry.value.id);
+          debugPrint('🗑️  削除対象(diff): ${entry.key} (id: ${entry.value.id})');
+        }
+      }
+
+      debugPrint('📊 削除対象の総数: ${foldersToDelete.length}');
+      debugPrint('📊 削除対象のID重複チェック:');
+      final deleteIds = foldersToDelete.map((f) => f.id).toList();
+      final deleteIdSet = deleteIds.toSet();
+      if (deleteIds.length != deleteIdSet.length) {
+        debugPrint('  ⚠️ 削除リストに重複ID発見！ 件数=${deleteIds.length}, ユニーク=${deleteIdSet.length}');
+      } else {
+        debugPrint('  ✅ 削除リストにID重複なし');
+      }
+
+      // 深さ順（子→親）でソート
+      int getDepth(FolderModel folder) {
+        int depth = 0;
+        String? currentParentId = folder.parentId;
+        while (currentParentId != null && currentParentId.isNotEmpty) {
+          depth++;
+          currentParentId = idToParentId[currentParentId];
+        }
+        return depth;
+      }
+      
+      foldersToDelete.sort((a, b) => getDepth(b).compareTo(getDepth(a)));
+      
+      debugPrint('📊 ソート後の削除順序（最初の10件）:');
+      for (final f in foldersToDelete.take(10)) {
+        final depth = getDepth(f);
+        final parentName = getParentNameByMaps(f.parentId, idToFolder) ?? 'なし';
+        debugPrint('  深さ$depth: ${f.name} (親: $parentName, id: ${f.id})');
+      }
+      
+      for (final folder in foldersToDelete) {
+        try {
           await store.deleteFolder(folder.id);
-          changes++;
+          deletedCount++;
+          final parentName = getParentNameByMaps(folder.parentId, idToFolder) ?? 'なし';
+          debugPrint('✅ 削除: "${folder.name}" (親: $parentName)');
+        } catch (e) {
+          debugPrint('❌ 削除エラー: "${folder.name}" - $e');
         }
       }
+      
+      // 削除後のリストを再取得（フラット）
+      final allFoldersFlatAfterDelete = await store.fetchAllFoldersFlat();
+      idToFolder = { for (final f in allFoldersFlatAfterDelete) f.id: f };
+      idToParentId = { for (final f in allFoldersFlatAfterDelete) f.id: f.parentId };
 
+      debugPrint('削除後のフォルダ数: ${allFoldersFlatAfterDelete.length}');
+      
+      // 削除後にcurrentFoldersMapを再構築（サブフォルダ含む）
+      currentFoldersMap.clear();
+      for (final folder in allFoldersFlatAfterDelete) {
+        final parentName = getParentNameByMaps(folder.parentId, idToFolder) ?? '';
+        final key = '$parentName|${folder.name}';
+        currentFoldersMap[key] = folder;
+      }
+      debugPrint('📊 削除後の現在のフォルダキー: ${currentFoldersMap.keys.toList()}');
+      
+      // ===== STEP 2: 必要なフォルダを作成 =====
+      debugPrint('========== STEP 2: 必要フォルダの作成 ==========');
+      
+      // 作成済みフォルダのIDマップ（複合キーで管理）
+      final createdFolderIds = <String, String>{};
+      
+      // 既存フォルダを記録（親名|フォルダ名の複合キー, フラット基準）
+      for (final entry in currentFoldersMap.entries) {
+        createdFolderIds[entry.key] = entry.value.id;
+        debugPrint('📝 既存記録: ${entry.key} → ${entry.value.id}');
+      }
+      
+      // 作成待ちのフォルダ
+      final pendingFolders = expectedFolders.entries
+          .where((e) => !currentFoldersMap.containsKey(e.key))
+          .map((e) => e.value)
+          .toList();
+      
+      debugPrint('作成対象フォルダ数: ${pendingFolders.length}');
+      
+      // 依存関係を解決しながら作成
+      int iteration = 0;
+      while (pendingFolders.isNotEmpty && iteration < 100) {
+        iteration++;
+        bool progressMade = false;
+        
+        final toCreateNow = <FinalFolderItem>[];
+        final toRemove = <FinalFolderItem>[];
+        
+        for (final item in pendingFolders) {
+          final parentName = item.parent.trim();
+          
+          // 既に存在チェック（最新のcurrentFoldersMapで）
+          final key = '$parentName|${item.name}';
+          if (currentFoldersMap.containsKey(key)) {
+            toRemove.add(item);
+            progressMade = true;
+            debugPrint('⏭️  スキップ（既存）: $key');
+            continue;
+          }
+          
+          // 親が不要、または親が既に存在する場合は作成可能
+          if (parentName.isEmpty) {
+            // トップレベルフォルダ
+            toCreateNow.add(item);
+          } else {
+            // 親フォルダを探す（複合キーで）
+            final parentKey = createdFolderIds.keys.firstWhere(
+              (k) => k.endsWith('|$parentName'),
+              orElse: () => '',
+            );
+            if (parentKey.isNotEmpty) {
+              toCreateNow.add(item);
+            }
+          }
+        }
+        
+        // スキップ対象を削除
+        for (final item in toRemove) {
+          pendingFolders.remove(item);
+        }
+        
+        // 作成リストから削除（重複防止）
+        for (final item in toCreateNow) {
+          pendingFolders.remove(item);
+        }
+        
+        // 作成実行
+        for (final item in toCreateNow) {
+          final parentName = item.parent.trim();
+          String? parentId;
+          
+          if (parentName.isNotEmpty) {
+            // 親フォルダのIDを取得（まずトップレベル一致を優先して検索）
+            String? parentKey;
+            final exactTopLevelKey = '|$parentName';
+            if (createdFolderIds.containsKey(exactTopLevelKey)) {
+              parentKey = exactTopLevelKey;
+            } else {
+              final matches = createdFolderIds.keys
+                  .where((k) => k.split('|').last == parentName)
+                  .toList();
+              if (matches.length == 1) {
+                parentKey = matches.first;
+              } else if (matches.isNotEmpty) {
+                // 複数ある場合は最初を採用（将来的にはフルパス対応を検討）
+                parentKey = matches.first;
+              }
+            }
+
+            if (parentKey == null) {
+              debugPrint('⚠️  親フォルダ "$parentName" のIDが見つかりません');
+              pendingFolders.add(item);
+              continue;
+            }
+
+            parentId = createdFolderIds[parentKey];
+            debugPrint('🔍 親検索: "$parentName" → $parentKey → $parentId');
+          }
+          
+          try {
+            // 作成前に重複チェック（念のため）
+            final allBeforeCreate = await store.fetchAllFoldersFlat();
+            final existingDuplicate = allBeforeCreate.firstWhere(
+              (f) {
+                final fParentId = f.parentId?.toString() ?? '';
+                final expectedParentId = parentId?.toString() ?? '';
+                return f.name == item.name && fParentId == expectedParentId;
+              },
+              orElse: () => FolderModel(id: '', name: '', sortOrder: 0),
+            );
+            
+            if (existingDuplicate.id.isNotEmpty) {
+              // 既に存在する場合はスキップ
+              debugPrint('⏭️  作成スキップ（既に存在）: "${item.name}" (id: ${existingDuplicate.id})');
+              final key = '$parentName|${item.name}';
+              createdFolderIds[key] = existingDuplicate.id;
+              currentFoldersMap[key] = existingDuplicate;
+              progressMade = true;
+              continue;
+            }
+            
+            await store.addFolder(item.name, parentId: parentId);
+            createdCount++;
+            debugPrint('✅ 作成: "${item.name}" (親: ${parentName.isEmpty ? "なし" : parentName})');
+            
+            // フラットなリストで全フォルダを取得（子フォルダも含む）
+            final allFoldersFlat = await store.fetchAllFoldersFlat();
+            
+            // IDを記録（複合キーで）
+            final created = allFoldersFlat.firstWhere(
+              (f) {
+                final fParentId = f.parentId?.toString() ?? '';
+                final expectedParentId = parentId?.toString() ?? '';
+                return f.name == item.name && fParentId == expectedParentId;
+              },
+              orElse: () => FolderModel(id: '', name: '', sortOrder: 0),
+            );
+            
+            if (created.id.isNotEmpty) {
+              final key = '$parentName|${item.name}';
+              createdFolderIds[key] = created.id;
+              progressMade = true;
+              
+              // 現在のマップも更新
+              currentFoldersMap[key] = created;
+              debugPrint('📝 ID記録: $key → ${created.id}');
+            } else {
+              debugPrint('⚠️  作成したフォルダが見つかりません: "${item.name}"');
+              debugPrint('🔍 デバッグ: 全フォルダ数=${allFoldersFlat.length}, 探索条件: name="${item.name}", parentId=$parentId');
+              pendingFolders.add(item);
+            }
+          } catch (e) {
+            debugPrint('❌ 作成エラー: "${item.name}" - $e');
+            pendingFolders.add(item);
+          }
+        }
+        
+        if (!progressMade) {
+          debugPrint('⚠️  これ以上作成できません。残り: ${pendingFolders.map((f) => f.name).toList()}');
+          break;
+        }
+      }
+      
+      if (pendingFolders.isNotEmpty) {
+        debugPrint('❌ 作成できなかったフォルダ: ${pendingFolders.map((f) => f.name).toList()}');
+      }
+      
+      debugPrint('========== フォルダ適用完了 ==========');
+      debugPrint('重複削除: $duplicatesRemoved 件');
+      debugPrint('削除: $deletedCount 件');
+      debugPrint('作成: $createdCount 件');
+      
       if (!mounted) return;
 
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('$changes 件の変更を適用しました'),
+          content: Text('フォルダを更新しました（重複削除: $duplicatesRemoved, 削除: $deletedCount, 作成: $createdCount）'),
           backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
         ),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('❌ フォルダ構造再構築エラー: $e');
+      debugPrint('スタックトレース: $stackTrace');
+      
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -6395,15 +6771,7 @@ class _FolderAnalysisResultSheetState extends State<FolderAnalysisResultSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // 新規フォルダ（merge_fromが空）
-    final newFolders = widget.analysis.suggestedFolders
-        .where((f) => f.mergeFrom.isEmpty)
-        .toList();
-    // 統合フォルダ（merge_fromが2個以上）
-    final mergeFolders = widget.analysis.suggestedFolders
-        .where((f) => f.mergeFrom.length >= 2)
-        .toList();
-    final removeFolders = widget.analysis.foldersToRemove;
+  // 結果の簡潔な表示のみ（詳細セクションは非表示）
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.9,
@@ -6426,7 +6794,7 @@ class _FolderAnalysisResultSheetState extends State<FolderAnalysisResultSheet> {
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
-                    'AI フォルダ構成分析結果',
+                    'AI フォルダ構成提案',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -6443,101 +6811,34 @@ class _FolderAnalysisResultSheetState extends State<FolderAnalysisResultSheet> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Overall Reasoning
-                Card(
-                  color: Colors.blue.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.lightbulb_outline, color: Colors.blue),
-                            SizedBox(width: 8),
-                            Text(
-                              '分析結果',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                // 最終的なフォルダ構成の可視化
+                if (widget.analysis.finalStructure != null && widget.analysis.finalStructure!.isNotEmpty) ...[
+                  _buildSectionHeader('最終的なフォルダ構成', Icons.account_tree, Colors.green),
+                  const SizedBox(height: 8),
+                  Card(
+                    color: Colors.green.shade50,
+                    child: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.green),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '適用後のフォルダ構成です。🆕=新規、📁=既存、🗑️=削除予定',
+                              style: TextStyle(fontSize: 12, color: Colors.green),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          widget.analysis.overallReasoning,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                
-                const SizedBox(height: 16),
-
-                // New Folders
-                if (newFolders.isNotEmpty) ...[
-                  _buildSectionHeader('新規フォルダの提案', Icons.add_circle_outline, Colors.green),
-                  ...newFolders.map((folder) => _buildFolderCard(
-                    folder: folder,
-                    isSelected: _selectedNewFolders.contains(folder.name),
-                    onToggle: () {
-                      setState(() {
-                        if (_selectedNewFolders.contains(folder.name)) {
-                          _selectedNewFolders.remove(folder.name);
-                        } else {
-                          _selectedNewFolders.add(folder.name);
-                        }
-                      });
-                    },
-                    color: Colors.green,
-                  )),
+                  const SizedBox(height: 8),
+                  _buildFinalStructureView(),
                   const SizedBox(height: 16),
                 ],
 
-                // Merge Folders
-                if (mergeFolders.isNotEmpty) ...[
-                  _buildSectionHeader('フォルダ統合の提案', Icons.merge_type, Colors.orange),
-                  ...mergeFolders.map((folder) => _buildFolderCard(
-                    folder: folder,
-                    isSelected: _selectedMergeFolders.contains(folder.name),
-                    onToggle: () {
-                      setState(() {
-                        if (_selectedMergeFolders.contains(folder.name)) {
-                          _selectedMergeFolders.remove(folder.name);
-                        } else {
-                          _selectedMergeFolders.add(folder.name);
-                        }
-                      });
-                    },
-                    color: Colors.orange,
-                  )),
-                  const SizedBox(height: 16),
-                ],
-
-                // Remove Folders
-                if (removeFolders.isNotEmpty) ...[
-                  _buildSectionHeader('削除推奨フォルダ', Icons.delete_outline, Colors.red),
-                  ...removeFolders.map((folderName) => Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: CheckboxListTile(
-                      value: _selectedRemoveFolders.contains(folderName),
-                      onChanged: (val) {
-                        setState(() {
-                          if (val == true) {
-                            _selectedRemoveFolders.add(folderName);
-                          } else {
-                            _selectedRemoveFolders.remove(folderName);
-                          }
-                        });
-                      },
-                      title: Text(
-                        folderName,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text('使用頻度が低いか、分類として役立っていません'),
-                      secondary: const Icon(Icons.delete_outline, color: Colors.red),
-                    ),
-                  )),
-                ],
+                // 詳細セクションは不要のため非表示
               ],
             ),
           ),
@@ -6559,15 +6860,9 @@ class _FolderAnalysisResultSheetState extends State<FolderAnalysisResultSheet> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: (_selectedNewFolders.isEmpty && 
-                             _selectedMergeFolders.isEmpty && 
-                             _selectedRemoveFolders.isEmpty)
-                      ? null
-                      : _applyChanges,
+                  onPressed: _applyChanges,
                   icon: const Icon(Icons.check),
-                  label: Text(
-                    '選択した変更を適用 (${_selectedNewFolders.length + _selectedMergeFolders.length + _selectedRemoveFolders.length}件)',
-                  ),
+                  label: const Text('フォルダ構成を適用'),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -6600,148 +6895,104 @@ class _FolderAnalysisResultSheetState extends State<FolderAnalysisResultSheet> {
     );
   }
 
-  // フォルダの階層レベルを計算するヘルパーメソッド
-  int _calculateFolderDepth(SuggestedFolder folder, List<SuggestedFolder> allFolders) {
-    if (folder.parent == null || folder.parent!.isEmpty) {
-      return 1; // トップレベル
-    }
-    
-    // 親フォルダを探して再帰的に計算
-    final parentFolder = allFolders.firstWhere(
-      (f) => f.name == folder.parent,
-      orElse: () => SuggestedFolder(name: '', description: '', reasoning: '', mergeFrom: []),
-    );
-    
-    if (parentFolder.name.isEmpty) {
-      return 2; // 親が見つからない場合は2層として扱う
-    }
-    
-    return 1 + _calculateFolderDepth(parentFolder, allFolders);
-  }
   
-  // 階層に応じた色を取得
-  Color _getDepthColor(int depth) {
-    switch (depth) {
-      case 1:
-        return Colors.blue.shade100;
-      case 2:
-        return Colors.orange.shade100;
-      case 3:
-        return Colors.purple.shade100;
-      case 4:
-        return Colors.green.shade100;
-      default:
-        return Colors.grey.shade200;
-    }
-  }
-  
-  // 階層に応じたテキスト色を取得
-  Color _getDepthTextColor(int depth) {
-    switch (depth) {
-      case 1:
-        return Colors.blue.shade800;
-      case 2:
-        return Colors.orange.shade800;
-      case 3:
-        return Colors.purple.shade800;
-      case 4:
-        return Colors.green.shade800;
-      default:
-        return Colors.grey.shade800;
-    }
-  }
 
-  Widget _buildFolderCard({
-    required SuggestedFolder folder,
-    required bool isSelected,
-    required VoidCallback onToggle,
-    required Color color,
-  }) {
-    // 階層レベルを計算
-    final depth = _calculateFolderDepth(folder, widget.analysis.suggestedFolders);
-    final hasParent = folder.parent != null && folder.parent!.isNotEmpty;
+  Widget _buildFinalStructureView() {
+    if (widget.analysis.finalStructure == null || widget.analysis.finalStructure!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    final finalStructure = widget.analysis.finalStructure!;
+    
+    // 階層構造を構築
+    final topLevel = finalStructure.where((f) => f.parent.isEmpty).toList();
+    
+    Widget buildFolderTree(FinalFolderItem folder, int depth) {
+      final children = finalStructure.where((f) => f.parent == folder.name).toList();
+      final status = folder.status;
+      final isToRemove = status == 'to_remove';
+      final isNew = status == 'new';
+      
+      // ステータスに応じたアイコンと色
+      IconData icon;
+      Color iconColor;
+      Color? background;
+      
+      if (isToRemove) {
+        icon = Icons.delete_outline;
+        iconColor = Colors.red;
+        background = Colors.red.shade50;
+      } else if (folder.status == 'new') {
+        icon = Icons.fiber_new;
+        iconColor = Colors.green;
+        background = Colors.green.shade50;
+      } else {
+        icon = Icons.folder;
+        iconColor = Colors.grey;
+        background = null;
+      }
+      
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            margin: const EdgeInsets.only(bottom: 4),
+            child: ListTile(
+              contentPadding: EdgeInsets.only(left: 12.0 + depth * 16.0, right: 12.0),
+              leading: Icon(icon, color: iconColor),
+              title: Text(
+                folder.name,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: depth == 0 ? FontWeight.bold : FontWeight.normal,
+                  decoration: isToRemove ? TextDecoration.lineThrough : null,
+                  color: isToRemove ? Colors.red.shade400 : Colors.black87,
+                ),
+              ),
+              trailing: isNew
+                  ? const Text('新規', style: TextStyle(fontSize: 12, color: Colors.green))
+                  : (isToRemove
+                      ? const Text('削除', style: TextStyle(fontSize: 12, color: Colors.red))
+                      : const Text('既存', style: TextStyle(fontSize: 12, color: Colors.grey))),
+            ),
+          ),
+          ...children.map((child) => buildFolderTree(child, depth + 1)),
+        ],
+      );
+    }
     
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: CheckboxListTile(
-        value: isSelected,
-        onChanged: (_) => onToggle(),
-        title: Row(
-          children: [
-            // 階層インジケーター
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: _getDepthColor(depth),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                '第${depth}層',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: _getDepthTextColor(depth),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // 階層インデント（深さに応じて増やす）
-            if (hasParent) ...[
-              for (int i = 1; i < depth; i++)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Icon(Icons.subdirectory_arrow_right, size: 14, color: Colors.grey.shade400),
-                ),
-              Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey.shade600),
-              const SizedBox(width: 4),
-            ],
-            Expanded(
-              child: Text(
-                folder.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        subtitle: Column(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (hasParent) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(Icons.subdirectory_arrow_right, size: 14, color: Colors.grey.shade600),
-                  const SizedBox(width: 4),
-                  Text(
-                    '親: ${folder.parent}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 4),
-            Text(folder.description),
-            const SizedBox(height: 4),
-            Text(
-              folder.reasoning,
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ...topLevel.map((folder) => buildFolderTree(folder, 0)),
+            const SizedBox(height: 8),
+            const Divider(),
+            Row(
+              children: [
+                const Text('凡例: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  margin: const EdgeInsets.only(left: 4, right: 8),
+                  decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(4)),
+                  child: const Text('新規', style: TextStyle(fontSize: 12, color: Colors.green)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(4)),
+                  child: const Text('削除', style: TextStyle(fontSize: 12, color: Colors.red)),
+                ),
+                const Text('既存', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ],
             ),
-            if (folder.mergeFrom.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 4,
-                children: folder.mergeFrom.map((oldFolder) => Chip(
-                  label: Text(oldFolder, style: const TextStyle(fontSize: 10)),
-                  backgroundColor: Colors.grey.shade200,
-                  visualDensity: VisualDensity.compact,
-                )).toList(),
-              ),
-            ],
           ],
-        ),
-        secondary: Icon(
-          folder.mergeFrom.isEmpty ? Icons.create_new_folder : Icons.merge_type,
-          color: color,
         ),
       ),
     );
