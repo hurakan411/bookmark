@@ -62,7 +62,7 @@ const Map<ApiEnvironment, String> apiBaseUrls = {
 String get apiBaseUrl => apiBaseUrls[currentApiEnvironment]!;
 
 // ====== デバッグ用: 広告表示フラグ ======
-const bool requireRewardedAdForAI = true; // falseで広告スキップ（デバッグ用）
+const bool requireRewardedAdForAI = false; // falseで広告スキップ（デバッグ用）
 const bool showBannerAds = true; // falseでバナー広告非表示（デバッグ用）
 
 // ====== レスポンシブレイアウト用ヘルパー関数 ======
@@ -3031,149 +3031,229 @@ class _SmartFolderScreenState extends State<SmartFolderScreen> {
                     ),
                   ),
                   
+                  // フォルダ管理セクション - ヘッダー
                   Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.auto_awesome, size: 32),
-                      title: const Text(
-                        'AI タグ構成分析',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    color: const Color(0xFFE3E8ED),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.folder, size: 18, color: Color(0xFF4A6479)),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'フォルダ管理',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Color(0xFF4A6479),
+                            ),
+                          ),
+                        ],
                       ),
-                      subtitle: const Text(
-                        '全ブックマークを分析して最適なタグ構成を提案します',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      trailing: _isAnalyzing
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.arrow_forward_ios),
-                      onTap: _isAnalyzing ? null : () => _analyzeTagStructure(context),
                     ),
                   ),
-          const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Text(
-              'AIがブックマークの内容を分析し、以下を提案します：\n'
-              '• 新しいタグの追加提案\n'
-              '• 類似タグの統合提案\n'
-              '• 不要なタグの削除提案',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
+                  
+                  const SizedBox(height: 4),
+                  
+                  // フォルダ管理セクション - 機能
+                  Card(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // フォルダ構成分析
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A6479).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.folder_special, size: 24, color: Color(0xFF4A6479)),
+                          ),
+                          title: const Text(
+                            'フォルダ構成分析',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text(
+                            '最適なフォルダ構成を提案',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          trailing: _isAnalyzingFolders
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.arrow_forward_ios, size: 16),
+                          onTap: _isAnalyzingFolders ? null : () => _analyzeFolderStructure(context),
+                        ),
+                        
+                        const Divider(height: 1),
+                        
+                        // 一括フォルダ割り当て
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A6479).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.drive_file_move, size: 24, color: Color(0xFF4A6479)),
+                          ),
+                          title: const Text(
+                            '一括フォルダ割り当て',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text(
+                            'ブックマークを自動分類',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          trailing: _isBulkAssigningFolders
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.arrow_forward_ios, size: 16),
+                          onTap: _isBulkAssigningFolders ? null : () => _bulkAssignFolders(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 4),
+                  
+                  // フォルダ管理 - 説明文
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'フォルダ構成分析：ブックマークから最適なフォルダ構成を提案',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '一括割り当て：各ブックマークを最適なフォルダに自動分類',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
           
           const SizedBox(height: 24),
           
+          // タグ管理セクション - ヘッダー
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.label, size: 32),
-              title: const Text(
-                'AI 一括タグ割り当て',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            color: const Color(0xFFE3E8ED),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Row(
+                children: [
+                  const Icon(Icons.label, size: 18, color: Color(0xFF4A6479)),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'タグ管理',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Color(0xFF4A6479),
+                    ),
+                  ),
+                ],
               ),
-              subtitle: const Text(
-                '全ブックマークに対してAIが最適なタグを一括で割り当てます',
-                style: TextStyle(fontSize: 12),
-              ),
-              trailing: _isBulkAssigning
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_forward_ios),
-              onTap: _isBulkAssigning ? null : () => _bulkAssignTags(context),
             ),
           ),
-          const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Text(
-              'AIが各ブックマークを分析し、適切なタグを自動的に割り当てます：\n'
-              '• 既存のタグから最適なものを選択\n'
-              '• ブックマークの内容に基づいて判断\n'
-              '• 検索・フィルタリングに役立つタグを優先',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.folder_special, size: 32),
-              title: const Text(
-                'AI フォルダ構成分析',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              subtitle: const Text(
-                '全ブックマークを分析して最適なフォルダ構成を提案します',
-                style: TextStyle(fontSize: 12),
-              ),
-              trailing: _isAnalyzingFolders
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_forward_ios),
-              onTap: _isAnalyzingFolders ? null : () => _analyzeFolderStructure(context),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'AIがブックマークの内容を分析し、以下を提案します：\n'
-                  '• 新しいフォルダの追加提案\n'
-                  '• 類似フォルダの統合提案\n'
-                  '• 不要なフォルダの削除提案\n'
-                  '※ 現在のフォルダとブックマークの紐付きは全て解除されます\n',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.folder, size: 32),
-              title: const Text(
-                'AI 一括フォルダ割り当て',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              subtitle: const Text(
-                '全ブックマークに対してAIが最適なフォルダを一括で割り当てます',
-                style: TextStyle(fontSize: 12),
-              ),
-              trailing: _isBulkAssigningFolders
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_forward_ios),
-              onTap: _isBulkAssigningFolders ? null : () => _bulkAssignFolders(context),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Text(
-              'AIが各ブックマークを分析し、適切なフォルダを自動的に割り当てます：\n'
-              '• 既存のフォルダから最適なものを選択\n'
-              '• ブックマークの内容に基づいて判断\n'
-              '• 整理・分類に役立つフォルダを優先',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
+                  
+                  const SizedBox(height: 4),
+                  
+                  // タグ管理セクション - 機能
+                  Card(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // タグ構成分析
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A6479).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.auto_awesome, size: 24, color: Color(0xFF4A6479)),
+                          ),
+                          title: const Text(
+                            'タグ構成分析',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text(
+                            '最適なタグ構成を提案',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          trailing: _isAnalyzing
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.arrow_forward_ios, size: 16),
+                          onTap: _isAnalyzing ? null : () => _analyzeTagStructure(context),
+                        ),
+                        
+                        const Divider(height: 1),
+                        
+                        // 一括タグ割り当て
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A6479).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.auto_fix_high, size: 24, color: Color(0xFF4A6479)),
+                          ),
+                          title: const Text(
+                            '一括タグ割り当て',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text(
+                            'ブックマークを自動タグ付け',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          trailing: _isBulkAssigning
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.arrow_forward_ios, size: 16),
+                          onTap: _isBulkAssigning ? null : () => _bulkAssignTags(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 4),
+                  
+                  // タグ管理 - 説明文
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'タグ構成分析：ブックマークから最適なタグ構成を提案',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '一括割り当て：各ブックマークを最適なタグで自動分類',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
