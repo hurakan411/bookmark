@@ -4,7 +4,7 @@
 <section class="flex flex-col items-center justify-center min-h-[60vh] space-y-6 text-center py-12">
   <!-- アプリのロゴ -->
   <div class="flex items-center justify-center">
-  <img src="/images/Logo_AIBookmark.png" alt="AI Bookmark ロゴ" class="h-16 w-16 rounded-2xl shadow-glow bg-white object-contain" />
+  <img src="/images/Logo_AIBookmark.png" alt="AI Bookmark ロゴ" class="h-16 w-16 rounded-2xl shadow-glow bg-white object-contain" loading="eager" />
   </div>
 
   <!-- アプリのタイトル -->
@@ -37,7 +37,7 @@
   <!-- アプリの動画 -->
   <div class="w-full max-w-[280px] mt-8">
     <div class="relative aspect-[1206/2622] rounded-xl border border-gray-200 bg-white overflow-hidden shadow-lg">
-      <video autoplay muted loop playsinline class="w-full h-full object-cover">
+      <video autoplay muted loop playsinline preload="none" loading="lazy" class="w-full h-full object-cover">
         <source src="/movie/Introduction_movie_bookmark.mp4" type="video/mp4" />
         お使いのブラウザは動画タグをサポートしていません。
       </video>

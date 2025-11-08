@@ -6,5 +6,18 @@ export default defineConfig({
     tailwind({
       applyBaseStyles: false
     })
-  ]
+  ],
+  // 画像最適化
+  image: {
+    service: {
+      entrypoint: 'astro/assets/services/sharp'
+    }
+  },
+  // ビルド最適化
+  vite: {
+    build: {
+      cssMinify: true,
+      minify: 'terser'
+    }
+  }
 });

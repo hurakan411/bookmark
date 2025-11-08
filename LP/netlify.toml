@@ -2,6 +2,12 @@
   command = "npm run build"
   publish = "dist"
 
+# 画像最適化を有効化
+[build.processing]
+  skip_processing = false
+[build.processing.images]
+  compress = true
+
 [[redirects]]
   from = "/.well-known/apple-app-site-association"
   to = "/apple-app-site-association"
@@ -12,3 +18,14 @@
   for = "/apple-app-site-association"
   [headers.values]
     Content-Type = "application/json"
+
+# キャッシュヘッダーを追加
+[[headers]]
+  for = "/images/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/movie/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
